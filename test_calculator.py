@@ -67,6 +67,11 @@ def test_calculator():
                 f.write(report)
             print(f"\nReport saved to: {report_file}")
             
+            # Test CSV export
+            csv_file = f"test_results_{sold_date.strftime('%Y%m%d')}.csv"
+            calculator.export_to_csv(results, csv_file)
+            print(f"CSV results exported to: {csv_file}")
+            
         else:
             print("No transactions were processed successfully.")
     

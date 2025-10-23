@@ -60,6 +60,12 @@ def main():
                 f.write(report)
             print(f"Report saved to: {filename}")
         
+        # Ask if user wants to export to CSV
+        export_csv = input("Would you like to export the results to CSV? (y/n): ").lower().strip()
+        if export_csv in ['y', 'yes']:
+            csv_filename = f"tesla_tax_results_{sold_date.strftime('%Y%m%d')}.csv"
+            calculator.export_to_csv(results, csv_filename)
+        
     except ValueError as e:
         print(f"Error: Invalid input - {e}")
     except Exception as e:

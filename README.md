@@ -45,8 +45,15 @@ The script will prompt you for:
 
 You can also use the calculator with command line arguments:
 ```bash
-python tax_calculator.py --csv your-stock-file.csv --income 150000 --sold-date 2025-10-23
+python tax_calculator.py --csv your-stock-file.csv --income 150000 --sold-date 2025-10-23 --export-csv results.csv
 ```
+
+Arguments:
+- `--csv`: Path to your stock CSV file
+- `--income`: Your ordinary income
+- `--sold-date`: Sale date (optional, defaults to today)
+- `--output`: Save text report to file (optional)
+- `--export-csv`: Export results to CSV file (optional)
 
 ### CSV File Format
 
@@ -84,12 +91,39 @@ The calculator includes Tesla's ESPP offer periods:
 
 ## Output
 
-The calculator generates a comprehensive report including:
+The calculator generates both text and CSV reports:
+
+### Text Report
+A comprehensive report including:
 - Summary statistics (total shares, proceeds, gains, taxes)
 - Individual transaction breakdowns
 - Tax classification for each transaction
 - Effective tax rates
 - Tax planning notes
+
+### CSV Export
+Structured data export with columns:
+- Stock_Type (RSU/ESPP)
+- Grant_Number
+- Acquired_Date
+- Offer_Date (ESPP only)
+- Shares
+- Acquisition_Price
+- Sold_Price
+- Proceeds
+- Total_Gain
+- Holding_Period (Long Term/Short Term)
+- Disposition_Type (Qualifying/Disqualifying for ESPP)
+- Tax_Type
+- Tax_Rate
+- Tax_Amount
+- Ordinary_Income_Portion
+
+The CSV format is ideal for:
+- Import into spreadsheet applications
+- Further analysis and calculations
+- Integration with accounting software
+- Record keeping and audit trails
 
 ## Important Notes
 

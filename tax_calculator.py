@@ -445,6 +445,56 @@ class TaxCalculator:
         report.append("")
         
         return "\n".join(report)
+    
+    def export_to_csv(self, results: List[Dict], filename: str) -> None:
+        """Export calculation results to CSV format."""
+        if not results:
+            print("No results to export.")
+            return
+        
+        # Prepare data for CSV export
+        csv_data = []
+        for r in results:
+            row = {
+                'Stock_Type': r['stock_type'],
+                'Grant_Number': r.get('grant_number', 'N/A'),
+                'Acquired_Date': r['acquired_date'].strftime('%Y-%m-%d'),
+                'Shares': r['shares'],
+                'Acquisition_Price': r['acquisition_price'],
+                'Sold_Price': r['sold_price'],
+                'Proceeds': r['proceeds'],
+                'Total_Gain': r['total_gain'],
+                'Holding_Period': 'Long Term' if r['is_long_term'] else 'Short Term',
+                'Tax_Type': r['tax_type'],
+                'Tax_Rate': r.get('tax_rate', 0),
+                'Tax_Amount': r['tax_amount'],
+                'Ordinary_Income_Portion': r.get('ordinary_income_portion', 0)
+            }
+            
+            # Add ESPP-specific fields
+            if r['stock_type'] == 'ESPP':
+                row['Offer_Date'] = r['offer_date'].strftime('%Y-%m-%d')
+                row['Disposition_Type'] = 'Qualifying' if r['is_qualifying'] else 'Disqualifying'
+            else:
+                row['Offer_Date'] = ''
+                row['Disposition_Type'] = ''
+            
+            csv_data.append(row)
+        
+        # Create DataFrame and save to CSV
+        df = pd.DataFrame(csv_data)
+        
+        # Reorder columns for better readability
+        column_order = [
+            'Stock_Type', 'Grant_Number', 'Acquired_Date', 'Offer_Date',
+            'Shares', 'Acquisition_Price', 'Sold_Price', 'Proceeds',
+            'Total_Gain', 'Holding_Period', 'Disposition_Type',
+            'Tax_Type', 'Tax_Rate', 'Tax_Amount', 'Ordinary_Income_Portion'
+        ]
+        
+        df = df[column_order]
+        df.to_csv(filename, index=False)
+        print(f"Results exported to CSV: {filename}")
 
 
 def main():
@@ -456,6 +506,7 @@ def main():
     parser.add_argument('--income', type=float, required=True, help='Your ordinary income')
     parser.add_argument('--sold-date', help='Sale date (YYYY-MM-DD), defaults to today')
     parser.add_argument('--output', help='Output file for the report')
+    parser.add_argument('--export-csv', help='Export results to CSV file')
     
     args = parser.parse_args()
     
@@ -482,6 +533,10 @@ def main():
             print(f"Report saved to {args.output}")
         else:
             print(report)
+        
+        # Export to CSV if requested
+        if args.export_csv:
+            calculator.export_to_csv(results, args.export_csv)
             
     except Exception as e:
         print(f"Error: {e}")
