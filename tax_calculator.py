@@ -34,6 +34,7 @@ class TaxCalculator:
         ]
         
         # Tesla ESPP plan dates (offer periods typically start in February and August)
+        # Each offer period lasts 6 months
         self.tesla_espp_periods = {
             2019: [datetime(2019, 2, 1), datetime(2019, 8, 1)],
             2020: [datetime(2020, 2, 1), datetime(2020, 8, 1)],
@@ -92,22 +93,19 @@ class TaxCalculator:
         """Infer the ESPP offer date based on Tesla's ESPP schedule."""
         year = purchase_date.year
         
-        if year not in self.tesla_espp_periods:
-            # Fallback logic for years not in our data
-            if purchase_date.month <= 2:
-                return datetime(year - 1, 8, 1)
-            elif purchase_date.month <= 8:
-                return datetime(year, 2, 1)
-            else:
-                return datetime(year, 8, 1)
+        # Tesla ESPP periods:
+        # - February 1 to July 31 (purchase in July/August)
+        # - August 1 to January 31 (purchase in January/February of next year)
         
-        # Find the appropriate offer period
-        periods = self.tesla_espp_periods[year]
-        
-        if purchase_date <= periods[0] + timedelta(days=180):  # First period
-            return periods[0]
-        else:  # Second period
-            return periods[1]
+        if purchase_date.month <= 2:
+            # Purchase in Jan/Feb means offer was from previous August
+            return datetime(year - 1, 8, 1)
+        elif purchase_date.month <= 8:
+            # Purchase in Mar-Aug means offer was from February of same year
+            return datetime(year, 2, 1)
+        else:
+            # Purchase in Sep-Dec means offer was from August of same year
+            return datetime(year, 8, 1)
     
     def is_qualifying_espp_disposition(self, offer_date: datetime, purchase_date: datetime, 
                                      sold_date: datetime) -> bool:
@@ -195,14 +193,18 @@ class TaxCalculator:
         acquired_date = row['Date Acquired']
         shares = row['Sellable Qty.']
         
-        # For RSUs, the acquisition value is the fair market value at vesting
-        # This is essentially the "basis" for tax purposes
-        acquisition_value = row['Est. Market Value']
+        # For RSUs, the basis is the FMV at vesting (when acquired)
+        # The Expected Gain/Loss shows gain based on current market value
+        # We need to back-calculate the acquisition price from this
+        expected_gain = row['Expected Gain/Loss']
+        current_market_value = row['Est. Market Value']
+        
+        # acquisition_value = current_market_value - expected_gain
+        acquisition_value = current_market_value - expected_gain
         acquisition_price = acquisition_value / shares if shares > 0 else 0
         
-        # Calculate proceeds and gains
+        # Calculate proceeds and gains based on actual sold price
         proceeds = shares * sold_price
-        # The gain is proceeds minus the acquisition value (basis)
         total_gain = proceeds - acquisition_value
         
         # Determine if long-term or short-term
@@ -252,24 +254,24 @@ class TaxCalculator:
         purchase_value = market_value - expected_gain
         purchase_price_per_share = purchase_value / shares if shares > 0 else 0
         
-        # Calculate proceeds
+        # Calculate proceeds and total gain
         proceeds = shares * sold_price
         total_gain = proceeds - purchase_value
         
         if is_qualifying:
             # Qualifying disposition
             # For qualifying disposition, the ordinary income portion is the lesser of:
-            # 1. The discount at grant (15% of FMV at offer date)
+            # 1. The discount at grant (typically 15% of FMV at offer date)
             # 2. The actual gain on sale
             
             # Estimate FMV at offer date (reverse engineer from 15% discount)
-            # Tesla ESPP typically offers 15% discount
+            # Tesla ESPP typically offers 15% discount off the lower of offer/purchase price
             estimated_offer_fmv = purchase_price_per_share / 0.85
             discount_per_share = estimated_offer_fmv * 0.15
             total_discount = discount_per_share * shares
             
             ordinary_income_portion = min(total_discount, total_gain)
-            capital_gain_portion = total_gain - ordinary_income_portion
+            capital_gain_portion = max(0, total_gain - ordinary_income_portion)
             
             # Tax calculation
             ordinary_tax = ordinary_income_portion * self.calculate_marginal_tax_rate(ordinary_income)
@@ -289,7 +291,7 @@ class TaxCalculator:
             discount_amount = discount_per_share * shares
             
             ordinary_income_portion = discount_amount
-            capital_gain_portion = total_gain - ordinary_income_portion
+            capital_gain_portion = max(0, total_gain - ordinary_income_portion)
             
             # Tax calculation
             ordinary_tax = ordinary_income_portion * self.calculate_marginal_tax_rate(ordinary_income)
