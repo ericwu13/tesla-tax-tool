@@ -126,22 +126,31 @@ class TaxCalculator:
             ticker = yf.Ticker(symbol)
             
             # Get historical data around the date
-            start_date = (date - timedelta(days=5)).strftime('%Y-%m-%d')
-            end_date = (date + timedelta(days=5)).strftime('%Y-%m-%d')
+            start_date = (date - timedelta(days=10)).strftime('%Y-%m-%d')
+            end_date = (date + timedelta(days=10)).strftime('%Y-%m-%d')
             
             hist = ticker.history(start=start_date, end=end_date)
             
             if hist.empty:
-                raise ValueError(f"No data found for {symbol} around {date}")
+                print(f"Warning: No data found for {symbol} around {date}")
+                return 0.0
             
             # Find the closest trading day
             target_date = date.strftime('%Y-%m-%d')
-            if target_date in hist.index:
-                return hist.loc[target_date]['Close']
+            
+            # Convert index to date strings for comparison
+            hist_dates = [idx.strftime('%Y-%m-%d') for idx in hist.index]
+            
+            if target_date in hist_dates:
+                # Exact date match
+                return hist.loc[hist.index[hist_dates.index(target_date)]]['Close']
             else:
-                # Get the closest date
-                closest_date = min(hist.index, key=lambda x: abs((x.date() - date.date()).days))
-                return hist.loc[closest_date]['Close']
+                # Find the closest trading day (prefer earlier dates for acquisition)
+                hist_with_dates = [(idx, abs((idx.date() - date.date()).days)) for idx in hist.index]
+                closest_date_idx = min(hist_with_dates, key=lambda x: x[1])[0]
+                price = hist.loc[closest_date_idx]['Close']
+                print(f"Note: Using {closest_date_idx.strftime('%Y-%m-%d')} price (${price:.2f}) for {symbol} on {date.strftime('%Y-%m-%d')}")
+                return price
         
         except Exception as e:
             print(f"Error fetching stock price for {symbol} on {date}: {e}")
@@ -193,17 +202,17 @@ class TaxCalculator:
         acquired_date = row['Date Acquired']
         shares = row['Sellable Qty.']
         
-        # For RSUs, the basis is the FMV at vesting (when acquired)
-        # The Expected Gain/Loss shows gain based on current market value
-        # We need to back-calculate the acquisition price from this
-        expected_gain = row['Expected Gain/Loss']
-        current_market_value = row['Est. Market Value']
+        # For RSUs, get the actual stock price at the acquisition/vesting date
+        # This is the fair market value that becomes the tax basis
+        print(f"Fetching historical price for RSU acquired on {acquired_date.strftime('%Y-%m-%d')}...")
+        acquisition_price = self.get_stock_price('TSLA', acquired_date)
         
-        # acquisition_value = current_market_value - expected_gain
-        acquisition_value = current_market_value - expected_gain
-        acquisition_price = acquisition_value / shares if shares > 0 else 0
+        if acquisition_price == 0:
+            print(f"Warning: Could not get acquisition price for {acquired_date}")
+            return None
         
-        # Calculate proceeds and gains based on actual sold price
+        # Calculate values based on actual stock prices
+        acquisition_value = acquisition_price * shares
         proceeds = shares * sold_price
         total_gain = proceeds - acquisition_value
         
@@ -244,33 +253,33 @@ class TaxCalculator:
         # Infer offer date
         offer_date = self.get_tesla_offer_date(purchase_date)
         
-        # Determine if qualifying disposition
-        is_qualifying = self.is_qualifying_espp_disposition(offer_date, purchase_date, sold_date)
+        # Get historical stock prices for ESPP calculation
+        print(f"Fetching ESPP prices for offer: {offer_date.strftime('%Y-%m-%d')}, purchase: {purchase_date.strftime('%Y-%m-%d')}...")
         
-        # Calculate the purchase price from the data
-        # Expected gain is the difference between current market value and what was paid
-        expected_gain = row['Expected Gain/Loss']
-        market_value = row['Est. Market Value']
-        purchase_value = market_value - expected_gain
-        purchase_price_per_share = purchase_value / shares if shares > 0 else 0
+        offer_price = self.get_stock_price('TSLA', offer_date)
+        purchase_date_price = self.get_stock_price('TSLA', purchase_date)
         
-        # Calculate proceeds and total gain
+        if offer_price == 0 or purchase_date_price == 0:
+            print(f"Warning: Could not get historical prices for ESPP calculation")
+            return None
+        
+        # ESPP purchase price is typically 85% of the lower of offer price or purchase date price
+        lower_price = min(offer_price, purchase_date_price)
+        espp_purchase_price = lower_price * 0.85  # 15% discount
+        
+        # Calculate values
+        purchase_value = espp_purchase_price * shares
         proceeds = shares * sold_price
         total_gain = proceeds - purchase_value
         
+        # Determine if qualifying disposition
+        is_qualifying = self.is_qualifying_espp_disposition(offer_date, purchase_date, sold_date)
+        
         if is_qualifying:
             # Qualifying disposition
-            # For qualifying disposition, the ordinary income portion is the lesser of:
-            # 1. The discount at grant (typically 15% of FMV at offer date)
-            # 2. The actual gain on sale
-            
-            # Estimate FMV at offer date (reverse engineer from 15% discount)
-            # Tesla ESPP typically offers 15% discount off the lower of offer/purchase price
-            estimated_offer_fmv = purchase_price_per_share / 0.85
-            discount_per_share = estimated_offer_fmv * 0.15
-            total_discount = discount_per_share * shares
-            
-            ordinary_income_portion = min(total_discount, total_gain)
+            # Ordinary income = min(15% of FMV at offer, actual gain)
+            discount_amount = (lower_price - espp_purchase_price) * shares
+            ordinary_income_portion = min(discount_amount, total_gain)
             capital_gain_portion = max(0, total_gain - ordinary_income_portion)
             
             # Tax calculation
@@ -282,14 +291,7 @@ class TaxCalculator:
         else:
             # Disqualifying disposition
             # The discount amount is treated as ordinary income
-            # The remaining gain is capital gains
-            
-            # Estimate the FMV at purchase date for discount calculation
-            # We'll use a simplified approach where the discount is ~15%
-            estimated_fmv_at_purchase = purchase_price_per_share / 0.85
-            discount_per_share = estimated_fmv_at_purchase - purchase_price_per_share
-            discount_amount = discount_per_share * shares
-            
+            discount_amount = (lower_price - espp_purchase_price) * shares
             ordinary_income_portion = discount_amount
             capital_gain_portion = max(0, total_gain - ordinary_income_portion)
             
@@ -311,8 +313,10 @@ class TaxCalculator:
             'stock_type': 'ESPP',
             'acquired_date': purchase_date,
             'offer_date': offer_date,
+            'offer_price': offer_price,
+            'purchase_date_price': purchase_date_price,
             'shares': shares,
-            'acquisition_price': purchase_price_per_share,
+            'acquisition_price': espp_purchase_price,
             'sold_price': sold_price,
             'proceeds': proceeds,
             'total_gain': total_gain,
@@ -348,6 +352,11 @@ class TaxCalculator:
                 elif row['Stock_Type'] == 'ESPP':
                     result = self.calculate_espp_taxes(row, sold_date, sold_price, ordinary_income)
                 else:
+                    continue
+                
+                # Skip if calculation failed (couldn't get historical prices)
+                if result is None:
+                    print(f"Skipping row {index} due to missing price data")
                     continue
                 
                 # Add additional info
@@ -425,8 +434,10 @@ class TaxCalculator:
                 report.append(f"Grant: {r.get('grant_number', 'N/A')}")
                 report.append(f"  Offer Date: {r['offer_date'].strftime('%Y-%m-%d')}")
                 report.append(f"  Purchase Date: {r['acquired_date'].strftime('%Y-%m-%d')}")
+                report.append(f"  Offer Price: ${r.get('offer_price', 0):.2f}")
+                report.append(f"  Purchase Date Price: ${r.get('purchase_date_price', 0):.2f}")
+                report.append(f"  ESPP Purchase Price (15% discount): ${r['acquisition_price']:.2f}")
                 report.append(f"  Shares: {r['shares']:.2f}")
-                report.append(f"  Purchase Price: ${r['acquisition_price']:.2f}")
                 report.append(f"  Sold Price: ${r['sold_price']:.2f}")
                 report.append(f"  Proceeds: ${r['proceeds']:,.2f}")
                 report.append(f"  Total Gain: ${r['total_gain']:,.2f}")
@@ -476,9 +487,13 @@ class TaxCalculator:
             # Add ESPP-specific fields
             if r['stock_type'] == 'ESPP':
                 row['Offer_Date'] = r['offer_date'].strftime('%Y-%m-%d')
+                row['Offer_Price'] = r.get('offer_price', 0)
+                row['Purchase_Date_Price'] = r.get('purchase_date_price', 0)
                 row['Disposition_Type'] = 'Qualifying' if r['is_qualifying'] else 'Disqualifying'
             else:
                 row['Offer_Date'] = ''
+                row['Offer_Price'] = ''
+                row['Purchase_Date_Price'] = ''
                 row['Disposition_Type'] = ''
             
             csv_data.append(row)
@@ -488,7 +503,7 @@ class TaxCalculator:
         
         # Reorder columns for better readability
         column_order = [
-            'Stock_Type', 'Grant_Number', 'Acquired_Date', 'Offer_Date',
+            'Stock_Type', 'Grant_Number', 'Acquired_Date', 'Offer_Date', 'Offer_Price', 'Purchase_Date_Price',
             'Shares', 'Acquisition_Price', 'Sold_Price', 'Proceeds',
             'Total_Gain', 'Holding_Period', 'Disposition_Type',
             'Tax_Type', 'Tax_Rate', 'Tax_Amount', 'Ordinary_Income_Portion'
