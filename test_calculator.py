@@ -13,7 +13,7 @@ def test_calculator():
     
     # Test parameters
     csv_file = "data/my-tesla-stocks.csv"
-    ordinary_income = 150000  # Example income
+    ordinary_income = 300000 # Example income
     sold_date = datetime(2025, 10, 23)  # Today's date
     
     print(f"CSV file: {csv_file}")
