@@ -62,15 +62,19 @@ def test_calculator():
             print(report)
             
             # Save report
+            output_dir = "outputs"
+            os.makedirs(output_dir, exist_ok=True)
+            
             report_file = f"test_report_{sold_date.strftime('%Y%m%d')}.txt"
-            with open(report_file, 'w') as f:
+            report_path = os.path.join(output_dir, report_file)
+            with open(report_path, 'w') as f:
                 f.write(report)
-            print(f"\nReport saved to: {report_file}")
+            print(f"\nReport saved to: {report_path}")
             
             # Test CSV export
             csv_file = f"test_results_{sold_date.strftime('%Y%m%d')}.csv"
             calculator.export_to_csv(results, csv_file)
-            print(f"CSV results exported to: {csv_file}")
+            print(f"CSV results exported to: outputs/{csv_file}")
             
         else:
             print("No transactions were processed successfully.")

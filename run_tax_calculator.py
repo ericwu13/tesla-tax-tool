@@ -16,10 +16,10 @@ def main():
     # Get inputs from user
     try:
         # CSV file path
-        csv_file = input("Enter the path to your stock CSV file (or press Enter for 'my-tesla-stocks.csv'): ").strip()
+        csv_file = input("Enter the path to your stock CSV file (or press Enter for 'data/my-tesla-stocks.csv'): ").strip()
         if not csv_file:
-            csv_file = "my-tesla-stocks.csv"
-        
+            csv_file = "data/my-tesla-stocks.csv"
+
         if not os.path.exists(csv_file):
             print(f"Error: File '{csv_file}' not found.")
             return
@@ -55,10 +55,15 @@ def main():
         # Ask if user wants to save the report
         save_report = input("\nWould you like to save this report to a file? (y/n): ").lower().strip()
         if save_report in ['y', 'yes']:
+            # Create outputs directory if it doesn't exist
+            output_dir = "outputs"
+            os.makedirs(output_dir, exist_ok=True)
+            
             filename = f"tesla_tax_report_{sold_date.strftime('%Y%m%d')}.txt"
-            with open(filename, 'w') as f:
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, 'w') as f:
                 f.write(report)
-            print(f"Report saved to: {filename}")
+            print(f"Report saved to: {filepath}")
         
         # Ask if user wants to export to CSV
         export_csv = input("Would you like to export the results to CSV? (y/n): ").lower().strip()

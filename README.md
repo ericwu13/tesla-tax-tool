@@ -37,7 +37,7 @@ python run_tax_calculator.py
 ```
 
 The script will prompt you for:
-- Path to your CSV file (defaults to `my-tesla-stocks.csv`)
+- Path to your CSV file (defaults to `./data/my-tesla-stocks.csv`)
 - Your ordinary income for 2025
 - Sale date (defaults to today)
 
@@ -161,8 +161,16 @@ Effective Tax Rate: 19.42%
 - `tax_calculator.py`: Main calculation engine and command-line interface
 - `run_tax_calculator.py`: Interactive user interface
 - `test_calculator.py`: Test script for validation
-- `my-tesla-stocks.csv`: Sample CSV data
-- `data/my-tesla-stocks.csv`: Alternative location for CSV data
+- `data/my-tesla-stocks.csv`: Sample CSV data
+- `outputs/`: Directory containing generated reports and CSV exports
+
+## Output Files
+
+All generated reports and CSV files are automatically saved to the `outputs/` directory to keep the project root clean:
+
+- **Text Reports**: `tesla_tax_report_YYYYMMDD.txt`
+- **CSV Exports**: `tesla_tax_results_YYYYMMDD.csv`
+- **Test Files**: `test_report_YYYYMMDD.txt`, `test_results_YYYYMMDD.csv`
 
 ## Testing
 

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 import yfinance as yf
 import re
+import os
 
 
 class TaxCalculator:
@@ -465,6 +466,13 @@ class TaxCalculator:
             print("No results to export.")
             return
         
+        # Create outputs directory if it doesn't exist
+        output_dir = "outputs"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Add output directory to filename
+        csv_path = os.path.join(output_dir, filename)
+        
         # Prepare data for CSV export
         csv_data = []
         for r in results:
@@ -510,8 +518,8 @@ class TaxCalculator:
         ]
         
         df = df[column_order]
-        df.to_csv(filename, index=False)
-        print(f"Results exported to CSV: {filename}")
+        df.to_csv(csv_path, index=False)
+        print(f"Results exported to CSV: {csv_path}")
 
 
 def main():
@@ -544,10 +552,15 @@ def main():
         results = calculator.calculate_all_taxes(args.csv, args.income, sold_date)
         report = calculator.generate_report(results, args.income, sold_date)
         
+        # Create outputs directory if it doesn't exist
+        output_dir = "outputs"
+        os.makedirs(output_dir, exist_ok=True)
+        
         if args.output:
-            with open(args.output, 'w') as f:
+            output_path = os.path.join(output_dir, args.output)
+            with open(output_path, 'w') as f:
                 f.write(report)
-            print(f"Report saved to {args.output}")
+            print(f"Report saved to {output_path}")
         else:
             print(report)
         
