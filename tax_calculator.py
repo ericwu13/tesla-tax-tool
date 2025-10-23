@@ -242,7 +242,8 @@ class TaxCalculator:
             'tax_type': tax_type,
             'tax_rate': tax_rate,
             'tax_amount': tax_amount,
-            'ordinary_income_portion': 0  # RSUs don't have ordinary income portion at sale
+            'ordinary_income_portion': 0,  # RSUs don't have ordinary income portion at sale
+            'capital_gain_portion': total_gain  # For RSUs, all gain is capital gain
         }
     
     def calculate_espp_taxes(self, row: pd.Series, sold_date: datetime, 
@@ -326,7 +327,8 @@ class TaxCalculator:
             'is_long_term': is_qualifying or self.is_long_term(purchase_date, sold_date),
             'tax_type': tax_type,
             'tax_amount': total_tax,
-            'ordinary_income_portion': ordinary_income_portion
+            'ordinary_income_portion': ordinary_income_portion,
+            'capital_gain_portion': capital_gain_portion
         }
     
     def calculate_all_taxes(self, csv_file: str, ordinary_income: float, 
@@ -486,11 +488,12 @@ class TaxCalculator:
                 'Sold_Price': r['sold_price'],
                 'Proceeds': r['proceeds'],
                 'Total_Gain': r['total_gain'],
+                'Ordinary_Income_Portion': r.get('ordinary_income_portion', 0),
+                'Capital_Gain_Portion': r.get('capital_gain_portion', 0),
                 'Holding_Period': 'Long Term' if r['is_long_term'] else 'Short Term',
                 'Tax_Type': r['tax_type'],
                 'Tax_Rate': r.get('tax_rate', 0),
-                'Tax_Amount': r['tax_amount'],
-                'Ordinary_Income_Portion': r.get('ordinary_income_portion', 0)
+                'Tax_Amount': r['tax_amount']
             }
             
             # Add ESPP-specific fields
@@ -514,8 +517,8 @@ class TaxCalculator:
         column_order = [
             'Stock_Type', 'Grant_Number', 'Acquired_Date', 'Offer_Date', 'Offer_Price', 'Purchase_Date_Price',
             'Shares', 'Acquisition_Price', 'Sold_Price', 'Proceeds',
-            'Total_Gain', 'Holding_Period', 'Disposition_Type',
-            'Tax_Type', 'Tax_Rate', 'Tax_Amount', 'Ordinary_Income_Portion'
+            'Total_Gain', 'Ordinary_Income_Portion', 'Capital_Gain_Portion', 'Holding_Period', 'Disposition_Type',
+            'Tax_Type', 'Tax_Rate', 'Tax_Amount'
         ]
         
         df = df[column_order]
