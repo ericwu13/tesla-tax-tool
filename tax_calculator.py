@@ -291,8 +291,9 @@ class TaxCalculator:
             
         else:
             # Disqualifying disposition
-            # The discount amount is treated as ordinary income
-            discount_amount = (lower_price - espp_purchase_price) * shares
+            # For disqualifying dispositions, the discount is based on FMV at purchase date
+            # NOT the lower of offer/purchase price
+            discount_amount = (purchase_date_price - espp_purchase_price) * shares
             ordinary_income_portion = discount_amount
             capital_gain_portion = max(0, total_gain - ordinary_income_portion)
             
