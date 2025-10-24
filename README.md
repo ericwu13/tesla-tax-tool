@@ -1,10 +1,11 @@
 # Tesla Stock Tax Calculator
 
-A comprehensive Python tool for calculating taxes on Tesla stock grants including RSUs (Restricted Stock Units) and ESPP (Employee Stock Purchase Plan) transactions.
+A comprehensive Python tool for calculating taxes on Tesla stock grants including RSUs (Restricted Stock Units) and ESPP (Employee Stock Purchase Plan) transactions, plus a bonus allocation calculator for investment planning.
 
 ## Features
 
-- **Tax Bracket Calculation**: Uses 2025 federal tax brackets to determine marginal and capital gains tax rates
+### Tax Calculation Features
+- **Dynamic Tax Brackets**: Automatically fetches current year tax brackets with fallback to 2025 federal rates
 - **Stock Type Classification**: Automatically identifies RSUs vs ESPP from CSV data
 - **Long-term vs Short-term**: Determines capital gains treatment based on holding periods
 - **ESPP Tax Rules**: Implements qualifying vs disqualifying disposition rules per IRS guidelines
@@ -12,24 +13,35 @@ A comprehensive Python tool for calculating taxes on Tesla stock grants includin
 - **Real-time Pricing**: Fetches Tesla stock prices for accurate proceeds calculation
 - **Comprehensive Reports**: Generates detailed tax reports with breakdowns by transaction type
 
+### Bonus Allocation Calculator (NEW!)
+- **Mixed Investment Planning**: Calculate proceeds from bonuses split between RSUs and ISOs
+- **ISO Multiplier Effect**: Automatically applies 3x multiplier to ISO shares as specified
+- **Historical Price Integration**: Uses actual Tesla stock prices on purchase dates
+- **Flexible Allocation**: Support any percentage split (must total 100%)
+- **Target Price Modeling**: Calculate potential proceeds at different target sale prices
+- **Comprehensive Analysis**: Shows gains, returns, and investment performance metrics
+
 ## Requirements
 
 - Python 3.7+
 - pandas
 - yfinance
 - requests
+- beautifulsoup4
 
 ## Installation
 
 1. Clone or download this repository
 2. Install required packages:
    ```bash
-   pip install pandas yfinance requests
+   pip install pandas yfinance requests beautifulsoup4
    ```
 
 ## Usage
 
-### Interactive Mode (Recommended)
+### Tax Calculator
+
+#### Interactive Mode (Recommended)
 
 Run the interactive script:
 ```bash
@@ -41,7 +53,7 @@ The script will prompt you for:
 - Your ordinary income for 2025
 - Sale date (defaults to today)
 
-### Command Line Mode
+#### Command Line Mode
 
 You can also use the calculator with command line arguments:
 ```bash
@@ -54,6 +66,50 @@ Arguments:
 - `--sold-date`: Sale date (optional, defaults to today)
 - `--output`: Save text report to file (optional)
 - `--export-csv`: Export results to CSV file (optional)
+
+### Bonus Allocation Calculator
+
+#### Interactive Mode
+
+Run the interactive bonus allocation calculator:
+```bash
+python bonus_allocation_calculator.py
+```
+
+The script will prompt you for:
+- Bonus amount (e.g., $100,000)
+- Purchase/grant date (YYYY-MM-DD format)
+- RSU percentage (0-100)
+- Target sale price
+
+#### Programmatic Usage
+
+You can also use the bonus allocation feature programmatically:
+```python
+from datetime import datetime
+from tax_calculator import TaxCalculator
+
+calc = TaxCalculator()
+results = calc.calculate_bonus_allocation_proceeds(
+    bonus_amount=100000,        # $100k bonus
+    purchase_date=datetime(2024, 6, 15),
+    rsu_percentage=70,          # 70% RSU
+    iso_percentage=30,          # 30% ISO (will be multiplied by 3)
+    target_price=500            # Target sale price
+)
+
+# Generate report
+report = calc.print_bonus_allocation_report(results)
+print(report)
+```
+
+#### Algorithm Details
+1. **Allocation**: Splits bonus amount based on RSU/ISO percentages
+2. **Share Calculation**: 
+   - RSU shares = RSU allocation ÷ historical stock price on purchase date
+   - ISO shares = (ISO allocation ÷ historical stock price) × 3
+3. **Proceeds**: Calculates potential proceeds at target price
+4. **Analysis**: Shows gains, returns, and performance metrics
 
 ### CSV File Format
 

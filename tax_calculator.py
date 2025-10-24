@@ -727,6 +727,155 @@ class TaxCalculator:
         df = df[column_order]
         df.to_csv(csv_path, index=False)
         print(f"Results exported to CSV: {csv_path}")
+    
+    def calculate_bonus_allocation_proceeds(self, bonus_amount: float, purchase_date: datetime, 
+                                          rsu_percentage: float, iso_percentage: float, 
+                                          target_price: float) -> Dict[str, float]:
+        """
+        Calculate proceeds from a bonus distributed between RSUs and ISOs.
+        
+        This function assumes ISOs will be exercised using cashless exercise (exercise and sell 
+        immediately), which means no upfront cash is needed and proceeds represent pure gain.
+        
+        Args:
+            bonus_amount: Total bonus amount to be allocated
+            purchase_date: Date when stocks were purchased/granted (ISO strike date)
+            rsu_percentage: Percentage of bonus allocated to RSUs (0-100)
+            iso_percentage: Percentage of bonus allocated to ISOs (0-100)
+            target_price: Target sale price for calculating proceeds
+            
+        Returns:
+            Dictionary containing calculation results
+            
+        Note:
+            - RSU proceeds = shares × target_price (full sale value)
+            - ISO proceeds = shares × (target_price - strike_price) [gain only via cashless exercise]
+            - ISO shares are multiplied by 3 as per the algorithm requirement
+        """
+        # Input validation
+        if rsu_percentage + iso_percentage != 100:
+            raise ValueError(f"RSU and ISO percentages must sum to 100%. Got: {rsu_percentage}% + {iso_percentage}% = {rsu_percentage + iso_percentage}%")
+        
+        if bonus_amount <= 0:
+            raise ValueError("Bonus amount must be positive")
+            
+        if target_price <= 0:
+            raise ValueError("Target price must be positive")
+        
+        # Calculate allocation amounts
+        rsu_allocation = bonus_amount * (rsu_percentage / 100)
+        iso_allocation = bonus_amount * (iso_percentage / 100)
+        
+        # Get historical stock price at purchase date
+        print(f"Fetching Tesla stock price for {purchase_date.strftime('%Y-%m-%d')}...")
+        historical_price = self.get_stock_price("TSLA", purchase_date)
+        
+        if historical_price is None:
+            raise ValueError(f"Could not fetch historical price for {purchase_date.strftime('%Y-%m-%d')}")
+        
+        # Calculate RSU shares
+        rsu_shares = rsu_allocation / historical_price
+        
+        # Calculate ISO shares (multiplied by 3 as per requirement)
+        iso_shares_base = iso_allocation / historical_price
+        iso_shares_total = iso_shares_base * 3
+        
+        # Calculate proceeds at target price
+        rsu_proceeds = rsu_shares * target_price
+        
+        # For ISOs with cashless exercise (exercise and sell immediately):
+        # - No upfront cash required to exercise
+        # - Proceeds = (sale_price - strike_price) × shares
+        # - Strike price = historical_price (when ISOs were granted)
+        # - This represents pure gain without needing exercise capital
+        iso_gain_per_share = target_price - historical_price
+        iso_proceeds = iso_shares_total * iso_gain_per_share  # Only the gain portion
+        
+        total_proceeds = rsu_proceeds + iso_proceeds
+        
+        # Calculate gains
+        rsu_gain = rsu_proceeds - rsu_allocation
+        iso_gain = iso_proceeds  # For cashless exercise, proceeds = gain
+        total_gain = rsu_gain + iso_gain
+        
+        # Calculate the actual return on investment (ROI)
+        # ROI should be based on total proceeds vs initial bonus investment
+        actual_roi = ((total_proceeds - bonus_amount) / bonus_amount) * 100
+        
+        # Return comprehensive results
+        results = {
+            'bonus_amount': bonus_amount,
+            'purchase_date': purchase_date.strftime('%Y-%m-%d'),
+            'historical_price': historical_price,
+            'target_price': target_price,
+            'rsu_percentage': rsu_percentage,
+            'iso_percentage': iso_percentage,
+            'rsu_allocation': rsu_allocation,
+            'iso_allocation': iso_allocation,
+            'rsu_shares': rsu_shares,
+            'iso_shares_base': iso_shares_base,
+            'iso_shares_total': iso_shares_total,
+            'rsu_proceeds': rsu_proceeds,
+            'iso_proceeds': iso_proceeds,
+            'total_proceeds': total_proceeds,
+            'rsu_gain': rsu_gain,
+            'iso_gain': iso_gain,
+            'total_gain': total_gain,
+            'total_return_percentage': actual_roi,  # Fixed ROI calculation
+            'net_gain_loss': total_proceeds - bonus_amount  # Net gain or loss
+        }
+        
+        return results
+    
+    def print_bonus_allocation_report(self, results: Dict[str, float]) -> str:
+        """Generate a formatted report for bonus allocation calculation."""
+        
+        report = f"""
+================================================================================
+BONUS ALLOCATION PROCEEDS CALCULATION
+================================================================================
+Bonus Amount: ${results['bonus_amount']:,.2f}
+Purchase Date: {results['purchase_date']}
+Historical Stock Price: ${results['historical_price']:.2f}
+Target Sale Price: ${results['target_price']:.2f}
+
+ALLOCATION BREAKDOWN
+----------------------------------------
+RSU Allocation: {results['rsu_percentage']:.1f}% = ${results['rsu_allocation']:,.2f}
+ISO Allocation: {results['iso_percentage']:.1f}% = ${results['iso_allocation']:,.2f}
+
+SHARES CALCULATION
+----------------------------------------
+RSU Shares: ${results['rsu_allocation']:,.2f} ÷ ${results['historical_price']:.2f} = {results['rsu_shares']:.4f} shares
+ISO Shares (base): ${results['iso_allocation']:,.2f} ÷ ${results['historical_price']:.2f} = {results['iso_shares_base']:.4f} shares
+ISO Shares (×3 multiplier): {results['iso_shares_base']:.4f} × 3 = {results['iso_shares_total']:.4f} shares
+
+PROCEEDS AT TARGET PRICE
+----------------------------------------
+RSU Proceeds: {results['rsu_shares']:.4f} × ${results['target_price']:.2f} = ${results['rsu_proceeds']:,.2f}
+ISO Proceeds (Cashless Exercise): {results['iso_shares_total']:.4f} × (${results['target_price']:.2f} - ${results['historical_price']:.2f}) = ${results['iso_proceeds']:,.2f}
+  • Strike Price: ${results['historical_price']:.2f}
+  • Gain per Share: ${results['target_price']:.2f} - ${results['historical_price']:.2f} = ${results['target_price'] - results['historical_price']:.2f}
+  • ISO proceeds are gain-only since this is cashless exercise (no upfront cash needed)
+Total Proceeds: ${results['total_proceeds']:,.2f}
+
+GAINS ANALYSIS
+----------------------------------------
+RSU Gain: ${results['rsu_proceeds']:,.2f} - ${results['rsu_allocation']:,.2f} = ${results['rsu_gain']:,.2f}
+ISO Gain: ${results['iso_proceeds']:,.2f} (proceeds = gain for cashless exercise)
+Total Investment Gain: ${results['net_gain_loss']:,.2f}
+Return on Investment: {results['total_return_percentage']:.2f}%
+
+SUMMARY
+----------------------------------------
+Initial Investment: ${results['bonus_amount']:,.2f}
+Final Proceeds: ${results['total_proceeds']:,.2f}
+Net Gain/Loss: ${results['net_gain_loss']:,.2f}
+Return on Investment: {results['total_return_percentage']:.2f}%
+================================================================================
+        """
+        
+        return report
 
 
 def main():
