@@ -8,7 +8,8 @@ import sys
 from datetime import datetime
 from tax_calculator import TaxCalculator
 
-def test_allocation_scenarios(bonus_amount: float, purchase_date: datetime, target_price: float):
+def test_allocation_scenarios(bonus_amount: float, purchase_date: datetime, target_price: float, 
+                            ordinary_income: float = 300000, include_taxes: bool = True):
     """
     Test 5 different RSU/ISO allocation combinations:
     1) 100% RSUs, 0% ISOs
@@ -16,6 +17,13 @@ def test_allocation_scenarios(bonus_amount: float, purchase_date: datetime, targ
     3) 50% RSUs, 50% ISOs
     4) 20% RSUs, 80% ISOs
     5) 0% RSUs, 100% ISOs
+    
+    Args:
+        bonus_amount: Bonus amount to allocate
+        purchase_date: Purchase/grant date
+        target_price: Target sale price
+        ordinary_income: Current ordinary income for tax calculations
+        include_taxes: Whether to include tax impact analysis
     """
     
     print("BONUS ALLOCATION SCENARIO COMPARISON")
@@ -23,6 +31,11 @@ def test_allocation_scenarios(bonus_amount: float, purchase_date: datetime, targ
     print(f"Bonus Amount: ${bonus_amount:,.2f}")
     print(f"Purchase Date: {purchase_date.strftime('%B %d, %Y')}")
     print(f"Target Sale Price: ${target_price:.2f}")
+    if include_taxes:
+        print(f"Ordinary Income: ${ordinary_income:,.2f}")
+        print("Analysis: Including Tax Impact (RSU = LTCG, ISO = Ordinary Income)")
+    else:
+        print("Analysis: Pre-Tax Calculations Only")
     print()
     
     # Initialize calculator
@@ -46,21 +59,52 @@ def test_allocation_scenarios(bonus_amount: float, purchase_date: datetime, targ
         print("-" * 35)
         
         try:
-            results = calc.calculate_bonus_allocation_proceeds(
-                bonus_amount=bonus_amount,
-                purchase_date=purchase_date,
-                rsu_percentage=scenario['rsu_pct'],
-                iso_percentage=scenario['iso_pct'],
-                target_price=target_price
-            )
-            
-            if strike_price is None:
-                strike_price = results['historical_price']
-            
-            # Print results
-            print(f"  Proceeds: ${results['total_proceeds']:,.0f}")
-            print(f"  Net Gain/Loss: ${results['net_gain_loss']:,.0f}")
-            print(f"  ROI: {results['total_return_percentage']:.1f}%")
+            if include_taxes:
+                results = calc.calculate_bonus_allocation_proceeds_with_taxes(
+                    bonus_amount=bonus_amount,
+                    purchase_date=purchase_date,
+                    rsu_percentage=scenario['rsu_pct'],
+                    iso_percentage=scenario['iso_pct'],
+                    target_price=target_price,
+                    ordinary_income=ordinary_income
+                )
+                
+                if strike_price is None:
+                    strike_price = results['historical_price']
+                
+                # Print tax-aware results
+                print(f"  Pre-Tax Proceeds: ${results['total_proceeds']:,.0f}")
+                print(f"  After-Tax Proceeds: ${results['total_after_tax_proceeds']:,.0f}")
+                print(f"  Total Taxes: ${results['total_taxes']:,.0f}")
+                print(f"  Pre-Tax ROI: {results['total_return_percentage']:.1f}%")
+                print(f"  After-Tax ROI: {results['after_tax_roi']:.1f}%")
+                
+                # Store after-tax results for comparison
+                comparison_proceeds = results['total_after_tax_proceeds']
+                comparison_gain = results['net_after_tax_gain']
+                comparison_roi = results['after_tax_roi']
+                
+            else:
+                results = calc.calculate_bonus_allocation_proceeds(
+                    bonus_amount=bonus_amount,
+                    purchase_date=purchase_date,
+                    rsu_percentage=scenario['rsu_pct'],
+                    iso_percentage=scenario['iso_pct'],
+                    target_price=target_price
+                )
+                
+                if strike_price is None:
+                    strike_price = results['historical_price']
+                
+                # Print pre-tax results
+                print(f"  Proceeds: ${results['total_proceeds']:,.0f}")
+                print(f"  Net Gain/Loss: ${results['net_gain_loss']:,.0f}")
+                print(f"  ROI: {results['total_return_percentage']:.1f}%")
+                
+                # Store pre-tax results for comparison
+                comparison_proceeds = results['total_proceeds']
+                comparison_gain = results['net_gain_loss']
+                comparison_roi = results['total_return_percentage']
             
             if results.get('rsu_shares', 0) > 0:
                 print(f"  RSU Shares: {results['rsu_shares']:.1f}")
@@ -69,9 +113,11 @@ def test_allocation_scenarios(bonus_amount: float, purchase_date: datetime, targ
             
             results_list.append({
                 'scenario': scenario['name'],
-                'proceeds': results['total_proceeds'],
-                'net_gain_loss': results['net_gain_loss'],
-                'roi': results['total_return_percentage']
+                'proceeds': comparison_proceeds,
+                'net_gain_loss': comparison_gain,
+                'roi': comparison_roi,
+                'has_taxes': include_taxes,
+                'tax_data': results if include_taxes else None
             })
             
         except Exception as e:
@@ -85,17 +131,22 @@ def test_allocation_scenarios(bonus_amount: float, purchase_date: datetime, targ
     
     # Summary comparison
     print("=" * 60)
-    print("SUMMARY COMPARISON")
+    header = "AFTER-TAX COMPARISON" if include_taxes else "PRE-TAX COMPARISON"
+    print(header)
     print("=" * 60)
     
-    print(f"{'Scenario':<25} {'Proceeds':<12} {'Net Gain':<12} {'ROI':<8}")
-    print("-" * 59)
+    proceed_label = "After-Tax Proceeds" if include_taxes else "Proceeds"
+    gain_label = "After-Tax Gain" if include_taxes else "Net Gain"
+    roi_label = "After-Tax ROI" if include_taxes else "ROI"
+    
+    print(f"{'Scenario':<25} {proceed_label:<15} {gain_label:<12} {roi_label:<8}")
+    print("-" * 62)
     
     valid_results = []
     for result in results_list:
         if 'error' not in result:
             print(f"{result['scenario']:<25} "
-                  f"${result['proceeds']:>9,.0f}  "
+                  f"${result['proceeds']:>12,.0f}  "
                   f"${result['net_gain_loss']:>9,.0f}  "
                   f"{result['roi']:>6.1f}%")
             valid_results.append(result)
@@ -147,16 +198,21 @@ def parse_date(date_str):
 def main():
     """Main function - handle command line arguments or prompt for input"""
     
-    if len(sys.argv) == 4:
+    if len(sys.argv) >= 4:
         # Command line arguments provided
         try:
             bonus_amount = float(sys.argv[1])
             purchase_date = parse_date(sys.argv[2])
             target_price = float(sys.argv[3])
+            
+            # Optional parameters
+            ordinary_income = float(sys.argv[4]) if len(sys.argv) > 4 else 300000
+            include_taxes = sys.argv[5].lower() != 'false' if len(sys.argv) > 5 else True
+            
         except (ValueError, IndexError) as e:
             print(f"Error parsing arguments: {e}")
-            print("Usage: python bonus_allocation_test.py <bonus_amount> <purchase_date> <target_price>")
-            print("Example: python bonus_allocation_test.py 100000 2024-03-15 500")
+            print("Usage: python bonus_allocation_test.py <bonus_amount> <purchase_date> <target_price> [ordinary_income] [include_taxes]")
+            print("Example: python bonus_allocation_test.py 100000 2024-03-15 500 300000 true")
             return
     else:
         # Interactive input
@@ -169,6 +225,14 @@ def main():
             date_str = input("Purchase Date (YYYY-MM-DD): ")
             purchase_date = parse_date(date_str)
             target_price = float(input("Target Sale Price ($): "))
+            
+            # Optional tax parameters
+            income_input = input("Ordinary Income ($ - default 300000): ").strip()
+            ordinary_income = float(income_input) if income_input else 300000
+            
+            tax_input = input("Include tax analysis? (y/n - default y): ").strip().lower()
+            include_taxes = tax_input != 'n'
+            
         except (ValueError, KeyboardInterrupt) as e:
             print(f"\\nError: {e}")
             return
@@ -176,7 +240,7 @@ def main():
         print()
     
     # Run the test
-    test_allocation_scenarios(bonus_amount, purchase_date, target_price)
+    test_allocation_scenarios(bonus_amount, purchase_date, target_price, ordinary_income, include_taxes)
 
 if __name__ == "__main__":
     main()

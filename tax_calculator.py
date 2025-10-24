@@ -728,6 +728,86 @@ class TaxCalculator:
         df.to_csv(csv_path, index=False)
         print(f"Results exported to CSV: {csv_path}")
     
+    def calculate_bonus_allocation_proceeds_with_taxes(self, bonus_amount: float, purchase_date: datetime, 
+                                                     rsu_percentage: float, iso_percentage: float, 
+                                                     target_price: float, ordinary_income: float = 300000) -> Dict[str, float]:
+        """
+        Calculate proceeds from a bonus distributed between RSUs and ISOs, including tax impacts.
+        
+        Assumptions:
+        - RSUs are held for 1+ year and sold (long-term capital gains)
+        - ISOs are exercised via cashless exercise (taxed as ordinary income)
+        - Sale occurs 1+ year after grant date
+        
+        Args:
+            bonus_amount: Total bonus amount to be allocated
+            purchase_date: Date when stocks were purchased/granted (ISO strike date)
+            rsu_percentage: Percentage of bonus allocated to RSUs (0-100)
+            iso_percentage: Percentage of bonus allocated to ISOs (0-100)
+            target_price: Target sale price for calculating proceeds
+            ordinary_income: Current ordinary income for tax bracket calculation (default $300k)
+            
+        Returns:
+            Dictionary containing calculation results including tax implications
+        """
+        # Get the basic calculation first
+        basic_results = self.calculate_bonus_allocation_proceeds(
+            bonus_amount, purchase_date, rsu_percentage, iso_percentage, target_price
+        )
+        
+        # Calculate tax implications
+        historical_price = basic_results['historical_price']
+        rsu_shares = basic_results['rsu_shares']
+        iso_shares_total = basic_results['iso_shares_total']
+        rsu_proceeds = basic_results['rsu_proceeds']
+        iso_proceeds = basic_results['iso_proceeds']
+        rsu_allocation = basic_results['rsu_allocation']
+        
+        # RSU Tax Calculation (Long-term capital gains)
+        # RSU gain = proceeds - original allocation (cost basis)
+        rsu_gain = rsu_proceeds - rsu_allocation
+        ltcg_rate = self.calculate_capital_gains_rate(ordinary_income)
+        rsu_taxes = rsu_gain * ltcg_rate
+        rsu_after_tax_proceeds = rsu_proceeds - rsu_taxes
+        
+        # ISO Tax Calculation (Cashless exercise - ordinary income)
+        # For cashless exercise, the entire gain is taxed as ordinary income
+        marginal_tax_rate = self.calculate_marginal_tax_rate(ordinary_income)
+        iso_taxes = iso_proceeds * marginal_tax_rate  # iso_proceeds = gain for cashless
+        iso_after_tax_proceeds = iso_proceeds - iso_taxes
+        
+        # Total after-tax calculations
+        total_taxes = rsu_taxes + iso_taxes
+        total_after_tax_proceeds = rsu_after_tax_proceeds + iso_after_tax_proceeds
+        net_after_tax_gain = total_after_tax_proceeds - bonus_amount
+        after_tax_roi = (net_after_tax_gain / bonus_amount) * 100
+        
+        # Enhanced results including tax impacts
+        tax_results = basic_results.copy()
+        tax_results.update({
+            'ordinary_income': ordinary_income,
+            'ltcg_tax_rate': ltcg_rate,
+            'marginal_tax_rate': marginal_tax_rate,
+            
+            # RSU tax details
+            'rsu_gain': rsu_gain,
+            'rsu_taxes': rsu_taxes,
+            'rsu_after_tax_proceeds': rsu_after_tax_proceeds,
+            
+            # ISO tax details  
+            'iso_taxes': iso_taxes,
+            'iso_after_tax_proceeds': iso_after_tax_proceeds,
+            
+            # Total after-tax results
+            'total_taxes': total_taxes,
+            'total_after_tax_proceeds': total_after_tax_proceeds,
+            'net_after_tax_gain': net_after_tax_gain,
+            'after_tax_roi': after_tax_roi,
+            'effective_tax_rate': (total_taxes / (rsu_gain + iso_proceeds)) * 100 if (rsu_gain + iso_proceeds) > 0 else 0
+        })
+        
+        return tax_results
+
     def calculate_bonus_allocation_proceeds(self, bonus_amount: float, purchase_date: datetime, 
                                           rsu_percentage: float, iso_percentage: float, 
                                           target_price: float) -> Dict[str, float]:
@@ -872,6 +952,73 @@ Initial Investment: ${results['bonus_amount']:,.2f}
 Final Proceeds: ${results['total_proceeds']:,.2f}
 Net Gain/Loss: ${results['net_gain_loss']:,.2f}
 Return on Investment: {results['total_return_percentage']:.2f}%
+================================================================================
+        """
+        
+        return report
+
+    def print_bonus_allocation_tax_report(self, results: Dict[str, float]) -> str:
+        """Generate a formatted report for bonus allocation calculation including tax impacts."""
+        
+        report = f"""
+================================================================================
+BONUS ALLOCATION WITH TAX IMPACT ANALYSIS
+================================================================================
+Bonus Amount: ${results['bonus_amount']:,.2f}
+Purchase Date: {results['purchase_date']}
+Historical Stock Price: ${results['historical_price']:.2f}
+Target Sale Price: ${results['target_price']:.2f}
+Ordinary Income: ${results['ordinary_income']:,.2f}
+
+ALLOCATION BREAKDOWN
+----------------------------------------
+RSU Allocation: {results['rsu_percentage']:.1f}% = ${results['rsu_allocation']:,.2f}
+ISO Allocation: {results['iso_percentage']:.1f}% = ${results['iso_allocation']:,.2f}
+
+SHARES CALCULATION
+----------------------------------------
+RSU Shares: ${results['rsu_allocation']:,.2f} ÷ ${results['historical_price']:.2f} = {results['rsu_shares']:.4f} shares
+ISO Shares (×3 multiplier): {results['iso_shares_total']:.4f} shares
+
+PRE-TAX PROCEEDS
+----------------------------------------
+RSU Proceeds: {results['rsu_shares']:.4f} × ${results['target_price']:.2f} = ${results['rsu_proceeds']:,.2f}
+ISO Proceeds (Cashless): {results['iso_shares_total']:.4f} × ${results['target_price'] - results['historical_price']:.2f} = ${results['iso_proceeds']:,.2f}
+Total Pre-Tax Proceeds: ${results['total_proceeds']:,.2f}
+
+TAX CALCULATIONS
+----------------------------------------
+RSU Taxes (Long-Term Capital Gains at {results['ltcg_tax_rate']*100:.1f}%):
+  • RSU Gain: ${results['rsu_gain']:,.2f}
+  • LTCG Tax: ${results['rsu_taxes']:,.2f}
+  • After-Tax RSU Proceeds: ${results['rsu_after_tax_proceeds']:,.2f}
+
+ISO Taxes (Ordinary Income at {results['marginal_tax_rate']*100:.1f}%):
+  • ISO Gain: ${results['iso_proceeds']:,.2f}
+  • Ordinary Income Tax: ${results['iso_taxes']:,.2f}
+  • After-Tax ISO Proceeds: ${results['iso_after_tax_proceeds']:,.2f}
+
+Total Taxes: ${results['total_taxes']:,.2f}
+Effective Tax Rate: {results['effective_tax_rate']:.1f}%
+
+AFTER-TAX RESULTS
+----------------------------------------
+Total After-Tax Proceeds: ${results['total_after_tax_proceeds']:,.2f}
+Net After-Tax Gain/Loss: ${results['net_after_tax_gain']:,.2f}
+After-Tax ROI: {results['after_tax_roi']:.1f}%
+
+COMPARISON
+----------------------------------------
+Pre-Tax ROI: {results['total_return_percentage']:.1f}%
+After-Tax ROI: {results['after_tax_roi']:.1f}%
+Tax Impact: {results['total_return_percentage'] - results['after_tax_roi']:.1f} percentage points
+
+NOTES
+----------------------------------------
+• RSUs held 1+ year qualify for long-term capital gains rates
+• ISO cashless exercise gains taxed as ordinary income
+• Assumes sale occurs 1+ year after grant date
+• State taxes not included in calculation
 ================================================================================
         """
         
