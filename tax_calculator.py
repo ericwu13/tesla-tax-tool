@@ -15,238 +15,88 @@ import os
 class TaxCalculator:
     """Class to handle tax calculations for Tesla stock grants."""
     
-    def __init__(self):
-        # Get current tax year
-        self.current_year = datetime.now().year
-        
+    def __init__(self, tax_year: int = None):
+        # Tax year defaults to current year, but can be overridden (e.g., filing 2025 in 2026)
+        self.current_year = tax_year if tax_year else datetime.now().year
+
         # Initialize tax brackets (will be fetched dynamically)
         self.tax_brackets_single = []
         self.capital_gains_brackets_single = []
-        
-        # Load current year tax brackets
+
+        # Standard Deduction (Single filer) - updated by bracket loading
+        self.standard_deduction_single = 15000
+
+        # NIIT threshold (statutory, does not adjust for inflation)
+        self.niit_threshold_single = 200000
+        self.niit_rate = 0.038
+
+        # California state tax brackets (2025 single filer)
+        # Based on CA FTB 2025 tax rate schedules
+        self.ca_tax_brackets_single = [
+            (0, 0.01),           # 1% on income $0 to $10,756
+            (10756, 0.02),       # 2% on income $10,757 to $25,499
+            (25499, 0.04),       # 4% on income $25,500 to $40,245
+            (40245, 0.06),       # 6% on income $40,246 to $55,866
+            (55866, 0.08),       # 8% on income $55,867 to $70,606
+            (70606, 0.093),      # 9.3% on income $70,607 to $360,659
+            (360659, 0.103),     # 10.3% on income $360,660 to $432,787
+            (432787, 0.113),     # 11.3% on income $432,788 to $721,314
+            (721314, 0.123),     # 12.3% on income over $721,314
+        ]
+        # CA Mental Health Services Tax: additional 1% on taxable income over $1,000,000
+        self.ca_mental_health_threshold = 1000000
+        self.ca_mental_health_rate = 0.01
+
+        # CA standard deduction (single filer, 2025)
+        self.ca_standard_deduction_single = 5540
+
+        # CA SDI rate (informational - already withheld via W-2 box 14)
+        self.ca_sdi_rate = 0.012
+
+        # Load tax brackets for the target year
         self._load_tax_brackets()
         
     def _load_tax_brackets(self):
-        """Load current year tax brackets, with fallback to hardcoded values."""
-        try:
-            print(f"Attempting to fetch {self.current_year} tax brackets...")
-            self._fetch_current_tax_brackets()
-        except Exception as e:
-            print(f"Failed to fetch current tax brackets: {e}")
-            print("Using fallback 2025 tax brackets...")
-            self._use_fallback_tax_brackets()
-    
-    def _fetch_current_tax_brackets(self):
-        """Fetch current tax brackets from IRS or other reliable sources."""
-        import requests
-        from bs4 import BeautifulSoup
-        import json
-        
-        success = False
-        
-        # Try multiple sources for tax bracket information
-        sources = [
-            self._fetch_from_tax_foundation,
-            self._fetch_from_nerdwallet,
-            self._fetch_from_tax_brackets_api
-        ]
-        
-        for source_func in sources:
-            try:
-                if source_func():
-                    success = True
-                    print(f"Successfully fetched {self.current_year} tax brackets!")
-                    break
-            except Exception as e:
-                print(f"Failed to fetch from {source_func.__name__}: {e}")
-                continue
-        
-        if not success:
-            raise Exception("Unable to fetch current tax brackets from any source")
-    
-    def _fetch_from_tax_foundation(self):
-        """Fetch tax brackets from Tax Foundation or similar reliable tax source."""
-        try:
-            import requests
-            from bs4 import BeautifulSoup
-            
-            # Try to get current year tax information from reliable sources
-            # Tax Foundation URL pattern for tax brackets
-            url = f"https://taxfoundation.org/publications/federal-tax-rates-and-tax-brackets/"
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=10)
-            if response.status_code != 200:
-                return False
-            
-            # For now, let's implement a simpler approach
-            # We'll check what year we're in and use known bracket adjustments
-            
-            # IRS typically adjusts brackets for inflation each year
-            # Base this on the 2025 brackets we know and apply estimated adjustments
-            if self.current_year > 2025:
-                # Apply estimated inflation adjustments (typically 2-3% per year)
-                inflation_factor = 1 + (0.025 * (self.current_year - 2025))
+        """Load tax brackets for the configured tax year."""
+        if self.current_year == 2025:
+            self._use_2025_tax_brackets()
+        else:
+            # Apply inflation adjustment from 2025 base for other years
+            years_diff = self.current_year - 2025
+            inflation_factor = (1.025) ** years_diff
+            self._use_2025_tax_brackets()
+            if years_diff != 0:
                 self._apply_inflation_adjustment(inflation_factor)
-                return True
-            elif self.current_year == 2025:
-                # Use the exact 2025 brackets we have
-                return False  # Let fallback handle this
-            else:
-                # For years before 2025, we'd need historical data
-                return False
-                
-        except Exception as e:
-            print(f"Error fetching from tax foundation: {e}")
-            return False
-    
+
     def _apply_inflation_adjustment(self, inflation_factor):
-        """Apply inflation adjustment to tax brackets."""
-        # Adjust ordinary income brackets
-        adjusted_brackets = []
-        for threshold, rate in [(0, 0.10), (10275, 0.12), (41775, 0.22), 
-                               (89450, 0.24), (190750, 0.32), (243725, 0.35), (609350, 0.37)]:
-            adjusted_threshold = int(threshold * inflation_factor) if threshold > 0 else 0
-            adjusted_brackets.append((adjusted_threshold, rate))
-        
-        self.tax_brackets_single = adjusted_brackets
-        
-        # Adjust capital gains brackets
-        adjusted_cg_brackets = []
-        for threshold, rate in [(0, 0.0), (47025, 0.15), (518900, 0.20)]:
-            adjusted_threshold = int(threshold * inflation_factor) if threshold > 0 else 0
-            adjusted_cg_brackets.append((adjusted_threshold, rate))
-        
-        self.capital_gains_brackets_single = adjusted_cg_brackets
-        
-        print(f"Applied {((inflation_factor - 1) * 100):.1f}% inflation adjustment to {self.current_year} tax brackets")
-    
-    def _fetch_from_nerdwallet(self):
-        """Fetch tax brackets from NerdWallet or similar financial sites."""
-        try:
-            import requests
-            from bs4 import BeautifulSoup
-            import re
-            
-            # NerdWallet has reliable tax bracket information
-            url = f"https://www.nerdwallet.com/article/taxes/federal-income-tax-brackets"
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=15)
-            if response.status_code != 200:
-                return False
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Look for current year tax bracket information
-            # This is a simplified approach - actual scraping would need to parse tables
-            text_content = soup.get_text().lower()
-            
-            if str(self.current_year) in text_content and 'tax bracket' in text_content:
-                print(f"Found {self.current_year} tax information on NerdWallet")
-                # For a full implementation, we'd parse the actual bracket values
-                # For now, return False to use our inflation adjustment approach
-                return False
-            
-            return False
-                
-        except Exception as e:
-            print(f"Error fetching from NerdWallet: {e}")
-            return False
-    
-    def _fetch_from_tax_brackets_api(self):
-        """Fetch from IRS official sources or comprehensive tax data."""
-        try:
-            import requests
-            import re
-            
-            # Try to get data from IRS official sources
-            # Revenue Procedure announcements contain official bracket adjustments
-            
-            # For current implementation, let's use a practical approach:
-            # If we're in 2025 or later, check for official IRS announcements
-            
-            if self.current_year >= 2024:
-                # Try to fetch from IRS Revenue Procedures or announcements
-                # These contain the official tax bracket adjustments
-                
-                irs_urls = [
-                    f"https://www.irs.gov/newsroom/irs-provides-tax-inflation-adjustments-for-tax-year-{self.current_year}",
-                    f"https://www.irs.gov/pub/irs-drop/rp-{str(self.current_year)[-2:]}-*",  # Revenue procedures
-                ]
-                
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-                
-                for url in irs_urls:
-                    try:
-                        if '*' in url:
-                            continue  # Skip wildcard URLs for now
-                            
-                        response = requests.get(url, headers=headers, timeout=10)
-                        if response.status_code == 200:
-                            # Check if the page contains tax bracket information
-                            content = response.text.lower()
-                            if 'tax bracket' in content or 'income tax' in content:
-                                print(f"Found official IRS data for {self.current_year}")
-                                # For a complete implementation, we'd parse the actual values
-                                # For now, we'll use estimation based on known patterns
-                                self._use_estimated_current_year_brackets()
-                                return True
-                    except:
-                        continue
-            
-            return False
-                
-        except Exception as e:
-            print(f"Error fetching from IRS sources: {e}")
-            return False
-    
-    def _use_estimated_current_year_brackets(self):
-        """Use estimated brackets based on IRS inflation adjustment patterns."""
-        # The IRS typically adjusts tax brackets annually for inflation
-        # Based on historical patterns, adjustments are usually 2-4% per year
-        
-        base_year = 2025
-        if self.current_year == base_year:
-            # Use exact 2025 values
-            return False
-        
-        # Calculate inflation adjustment factor
-        years_diff = self.current_year - base_year
-        # Conservative estimate: 3% annual inflation adjustment
-        inflation_factor = (1.03) ** years_diff
-        
-        # Apply adjustment
-        self._apply_inflation_adjustment(inflation_factor)
-        
-        return True
-    
-    def _use_fallback_tax_brackets(self):
-        """Use hardcoded tax brackets as fallback."""
-        # 2025 Federal Tax Brackets (Single filer) - fallback values
+        """Apply inflation adjustment to tax brackets from 2025 base values."""
         self.tax_brackets_single = [
-            (0, 0.10),          # 10% on income up to $10,275
-            (10275, 0.12),      # 12% on income from $10,275 to $41,775
-            (41775, 0.22),      # 22% on income from $41,775 to $89,450
-            (89450, 0.24),      # 24% on income from $89,450 to $190,750
-            (190750, 0.32),     # 32% on income from $190,750 to $243,725
-            (243725, 0.35),     # 35% on income from $243,725 to $609,350
-            (609350, 0.37)      # 37% on income over $609,350
+            (int(t * inflation_factor) if t > 0 else 0, r)
+            for t, r in self.tax_brackets_single
         ]
-        
-        # 2025 Capital Gains Tax Brackets (Single filer) - fallback values
         self.capital_gains_brackets_single = [
-            (0, 0.0),           # 0% on capital gains up to $47,025
-            (47025, 0.15),      # 15% on capital gains from $47,025 to $518,900
-            (518900, 0.20)      # 20% on capital gains over $518,900
+            (int(t * inflation_factor) if t > 0 else 0, r)
+            for t, r in self.capital_gains_brackets_single
+        ]
+        self.standard_deduction_single = int(self.standard_deduction_single * inflation_factor)
+
+    def _use_2025_tax_brackets(self):
+        """Hardcoded 2025 tax brackets - IRS Rev. Proc. 2024-40."""
+        self.tax_brackets_single = [
+            (0, 0.10),          # 10% on income $0 to $11,925
+            (11925, 0.12),      # 12% on income $11,926 to $48,475
+            (48475, 0.22),      # 22% on income $48,476 to $103,350
+            (103350, 0.24),     # 24% on income $103,351 to $197,300
+            (197300, 0.32),     # 32% on income $197,301 to $250,525
+            (250525, 0.35),     # 35% on income $250,526 to $626,350
+            (626350, 0.37)      # 37% on income over $626,350
+        ]
+
+        # 2025 Capital Gains Tax Brackets (Single filer)
+        self.capital_gains_brackets_single = [
+            (0, 0.0),           # 0% on taxable income up to $48,350
+            (48350, 0.15),      # 15% on taxable income $48,351 to $533,400
+            (533400, 0.20)      # 20% on taxable income over $533,400
         ]
         
     def calculate_marginal_tax_rate(self, ordinary_income: float) -> float:
@@ -263,6 +113,255 @@ class TaxCalculator:
                 return rate
         return self.capital_gains_brackets_single[0][1]
     
+    def calculate_progressive_ordinary_tax(self, taxable_ordinary_income: float) -> Tuple[float, List[Dict]]:
+        """
+        Calculate federal income tax using progressive bracket application.
+
+        Returns:
+            Tuple of (total_tax, bracket_details) where bracket_details shows
+            how much income fell in each bracket and the tax on that portion.
+        """
+        if taxable_ordinary_income <= 0:
+            return 0.0, []
+
+        total_tax = 0.0
+        bracket_details = []
+        remaining_income = taxable_ordinary_income
+
+        for i, (threshold, rate) in enumerate(self.tax_brackets_single):
+            if remaining_income <= 0:
+                break
+
+            if i + 1 < len(self.tax_brackets_single):
+                next_threshold = self.tax_brackets_single[i + 1][0]
+                bracket_width = next_threshold - threshold
+            else:
+                bracket_width = remaining_income
+
+            taxable_in_bracket = min(remaining_income, bracket_width)
+            tax_in_bracket = taxable_in_bracket * rate
+            total_tax += tax_in_bracket
+
+            bracket_details.append({
+                'bracket_floor': threshold,
+                'rate': rate,
+                'income_in_bracket': taxable_in_bracket,
+                'tax_in_bracket': tax_in_bracket
+            })
+
+            remaining_income -= taxable_in_bracket
+
+        return total_tax, bracket_details
+
+    def calculate_progressive_ltcg_tax(self, taxable_ordinary_income: float,
+                                        long_term_gains: float) -> Tuple[float, List[Dict]]:
+        """
+        Calculate long-term capital gains tax progressively.
+        LTCG brackets are based on total taxable income. Ordinary income fills
+        the brackets first, then LTCG stacks on top.
+        """
+        if long_term_gains <= 0:
+            return 0.0, []
+
+        total_tax = 0.0
+        bracket_details = []
+        remaining_gains = long_term_gains
+        income_already_used = taxable_ordinary_income
+
+        for i, (threshold, rate) in enumerate(self.capital_gains_brackets_single):
+            if remaining_gains <= 0:
+                break
+
+            if i + 1 < len(self.capital_gains_brackets_single):
+                next_threshold = self.capital_gains_brackets_single[i + 1][0]
+            else:
+                next_threshold = float('inf')
+
+            if income_already_used >= next_threshold:
+                continue
+
+            bracket_start = max(threshold, income_already_used)
+            bracket_room = next_threshold - bracket_start
+            taxable_in_bracket = min(remaining_gains, bracket_room)
+
+            tax_in_bracket = taxable_in_bracket * rate
+            total_tax += tax_in_bracket
+
+            bracket_details.append({
+                'bracket_floor': threshold,
+                'rate': rate,
+                'gains_in_bracket': taxable_in_bracket,
+                'tax_in_bracket': tax_in_bracket
+            })
+
+            remaining_gains -= taxable_in_bracket
+            income_already_used += taxable_in_bracket
+
+        return total_tax, bracket_details
+
+    def calculate_niit(self, agi: float, net_investment_income: float) -> float:
+        """
+        Calculate Net Investment Income Tax (3.8% surtax).
+        Applies to single filers with MAGI > $200,000.
+        """
+        excess_agi = max(0, agi - self.niit_threshold_single)
+        niit_base = min(excess_agi, net_investment_income)
+        return niit_base * self.niit_rate
+
+    def calculate_ca_progressive_tax(self, taxable_income: float) -> Tuple[float, List[Dict]]:
+        """
+        Calculate California state income tax using progressive brackets.
+        CA taxes all income the same (no special LTCG rate).
+        """
+        if taxable_income <= 0:
+            return 0.0, []
+
+        total_tax = 0.0
+        bracket_details = []
+        remaining = taxable_income
+
+        for i, (threshold, rate) in enumerate(self.ca_tax_brackets_single):
+            if remaining <= 0:
+                break
+
+            if i + 1 < len(self.ca_tax_brackets_single):
+                next_threshold = self.ca_tax_brackets_single[i + 1][0]
+                bracket_width = next_threshold - threshold
+            else:
+                bracket_width = remaining
+
+            taxable_in_bracket = min(remaining, bracket_width)
+            tax_in_bracket = taxable_in_bracket * rate
+            total_tax += tax_in_bracket
+
+            bracket_details.append({
+                'bracket_floor': threshold,
+                'rate': rate,
+                'income_in_bracket': taxable_in_bracket,
+                'tax_in_bracket': tax_in_bracket,
+            })
+
+            remaining -= taxable_in_bracket
+
+        # Mental Health Services Tax: 1% on income over $1M
+        mental_health_tax = 0.0
+        if taxable_income > self.ca_mental_health_threshold:
+            mental_health_tax = (taxable_income - self.ca_mental_health_threshold) * self.ca_mental_health_rate
+            total_tax += mental_health_tax
+
+        return total_tax, bracket_details
+
+    def calculate_ca_state_tax(self, w2_state_wages: float,
+                                interest_income: float = 0,
+                                stock_short_term_gains: float = 0,
+                                stock_long_term_gains: float = 0,
+                                net_rental_income: float = 0,
+                                ca_itemized_deductions: Optional[float] = None,
+                                state_tax_withheld: float = 0,
+                                ca_sdi_withheld: float = 0) -> Dict:
+        """
+        Calculate California state income tax liability.
+
+        CA taxes all capital gains as ordinary income (no preferential rate).
+        CA does not allow SALT deduction. Mortgage interest is deductible.
+
+        Args:
+            w2_state_wages: W-2 Box 16 state wages
+            interest_income: 1099-INT interest income
+            stock_short_term_gains: Short-term capital gains
+            stock_long_term_gains: Long-term capital gains
+            net_rental_income: Net rental income from Schedule E
+            ca_itemized_deductions: CA itemized deductions (mortgage interest + property tax)
+            state_tax_withheld: W-2 Box 17 state tax withheld
+            ca_sdi_withheld: CA SDI from Box 14
+        """
+        # CA AGI = state wages + investment income + rental income
+        # Note: W-2 Box 16 already includes the state wage amount
+        ca_total_income = (w2_state_wages + interest_income +
+                           stock_short_term_gains + stock_long_term_gains +
+                           net_rental_income)
+
+        # CA deduction
+        if ca_itemized_deductions is not None and ca_itemized_deductions > self.ca_standard_deduction_single:
+            ca_deduction = ca_itemized_deductions
+            ca_deduction_type = 'Itemized'
+        else:
+            ca_deduction = self.ca_standard_deduction_single
+            ca_deduction_type = 'Standard'
+
+        ca_taxable_income = max(0, ca_total_income - ca_deduction)
+
+        # Progressive CA tax
+        ca_tax, ca_brackets = self.calculate_ca_progressive_tax(ca_taxable_income)
+
+        # Mental health surtax info
+        mental_health_tax = 0.0
+        if ca_taxable_income > self.ca_mental_health_threshold:
+            mental_health_tax = (ca_taxable_income - self.ca_mental_health_threshold) * self.ca_mental_health_rate
+
+        # Net due
+        ca_net_due = ca_tax - state_tax_withheld
+
+        return {
+            'ca_total_income': ca_total_income,
+            'ca_deduction_type': ca_deduction_type,
+            'ca_deduction': ca_deduction,
+            'ca_taxable_income': ca_taxable_income,
+            'ca_tax': ca_tax,
+            'ca_brackets': ca_brackets,
+            'ca_mental_health_tax': mental_health_tax,
+            'ca_state_tax_withheld': state_tax_withheld,
+            'ca_sdi_withheld': ca_sdi_withheld,
+            'ca_net_tax_due': max(0, ca_net_due),
+            'ca_refund': max(0, -ca_net_due),
+            'ca_effective_rate': (ca_tax / ca_total_income * 100) if ca_total_income > 0 else 0,
+        }
+
+    def generate_ca_tax_report_section(self, ca_result: Dict) -> str:
+        """Generate a California state tax section for the report."""
+        lines = []
+        lines.append("")
+        lines.append("=" * 80)
+        lines.append(f"  {self.current_year} CALIFORNIA STATE TAX LIABILITY ESTIMATE")
+        lines.append("=" * 80)
+        lines.append("")
+
+        lines.append("  CA INCOME")
+        lines.append("  " + "-" * 70)
+        lines.append(f"    CA Total Income:                             ${ca_result['ca_total_income']:>14,.2f}")
+        lines.append(f"    {ca_result['ca_deduction_type']} Deduction:                          (${ca_result['ca_deduction']:>13,.2f})")
+        lines.append(f"                                                 {'':>3}{'-' * 14}")
+        lines.append(f"    CA Taxable Income:                           ${ca_result['ca_taxable_income']:>14,.2f}")
+        lines.append("")
+
+        lines.append("  CA TAX CALCULATION")
+        lines.append("  " + "-" * 70)
+        lines.append("    Progressive CA Tax:")
+        for b in ca_result['ca_brackets']:
+            rate_pct = f"{b['rate']*100:.1f}%"
+            lines.append(f"      {rate_pct:>6} on ${b['income_in_bracket']:>12,.2f}:                   ${b['tax_in_bracket']:>12,.2f}")
+        if ca_result['ca_mental_health_tax'] > 0:
+            lines.append(f"    Mental Health Surtax (1% over $1M):          ${ca_result['ca_mental_health_tax']:>14,.2f}")
+        lines.append(f"                                                 {'':>3}{'-' * 14}")
+        lines.append(f"    Total CA Tax:                                ${ca_result['ca_tax']:>14,.2f}")
+        lines.append("")
+
+        lines.append("  CA PAYMENTS & WITHHOLDINGS")
+        lines.append("  " + "-" * 70)
+        lines.append(f"    CA State Tax Withheld (W-2 Box 17):         (${ca_result['ca_state_tax_withheld']:>13,.2f})")
+        lines.append(f"                                                 {'':>3}{'-' * 14}")
+        if ca_result['ca_net_tax_due'] > 0:
+            lines.append(f"    CA NET TAX DUE:                              ${ca_result['ca_net_tax_due']:>14,.2f}")
+        else:
+            lines.append(f"    CA REFUND:                                   ${ca_result['ca_refund']:>14,.2f}")
+        lines.append("")
+        lines.append(f"    CA Effective Tax Rate:                        {ca_result['ca_effective_rate']:>13.1f}%")
+        if ca_result['ca_sdi_withheld'] > 0:
+            lines.append(f"    CA SDI Withheld (Box 14):                    ${ca_result['ca_sdi_withheld']:>14,.2f}  (not income tax)")
+        lines.append("")
+
+        return "\n".join(lines)
+
     def parse_currency(self, value: str) -> float:
         """Parse currency string to float."""
         if pd.isna(value) or value == '':
@@ -363,28 +462,47 @@ class TaxCalculator:
     def load_stock_data(self, csv_file: str) -> pd.DataFrame:
         """Load and parse the stock CSV data."""
         df = pd.read_csv(csv_file)
-        
+
+        # Normalize first column name (CSV may use 'Test' or 'Record Type')
+        first_col = df.columns[0]
+        if first_col != 'Record Type':
+            df = df.rename(columns={first_col: 'Record Type'})
+
         # Clean up the dataframe
         df = df.dropna(how='all')  # Remove empty rows
-        df = df[df['Test'].notna()]  # Remove rows with no data
-        df = df[df['Test'] != 'Overall Total']  # Remove summary row
-        
+        df = df[df['Record Type'].notna()]  # Remove rows with no data
+        df = df[df['Record Type'] != 'Overall Total']  # Remove summary row
+
         # Parse dates
         df['Date Acquired'] = df['Date Acquired'].apply(self.parse_date)
         df = df[df['Date Acquired'].notna()]  # Remove rows with invalid dates
-        
+
+        # Parse optional sale columns (backward compatible)
+        if 'Date Sold' in df.columns:
+            df['Date Sold'] = df['Date Sold'].apply(
+                lambda x: self.parse_date(x) if pd.notna(x) and str(x).strip() != '' else None
+            )
+        else:
+            df['Date Sold'] = None
+
+        if 'Sale Price' in df.columns:
+            df['Sale Price'] = df['Sale Price'].apply(
+                lambda x: self.parse_currency(str(x)) if pd.notna(x) and str(x).strip() != '' else 0.0
+            )
+        else:
+            df['Sale Price'] = 0.0
+
         # Parse numeric values
         df['Sellable Qty.'] = pd.to_numeric(df['Sellable Qty.'], errors='coerce')
         df['Expected Gain/Loss'] = df['Expected Gain/Loss'].apply(self.parse_currency)
         df['Est. Market Value'] = df['Est. Market Value'].apply(self.parse_currency)
-        df['Tax'] = df['Tax'].apply(self.parse_currency)
-        
+
         # Remove rows with invalid quantities
         df = df[df['Sellable Qty.'] > 0]
-        
+
         # Classify stock type
         df['Stock_Type'] = df['Plan Type'].apply(self.classify_stock_type)
-        
+
         return df
     
     def classify_stock_type(self, plan_type: str) -> str:
@@ -534,48 +652,74 @@ class TaxCalculator:
             'capital_gain_portion': capital_gain_portion
         }
     
-    def calculate_all_taxes(self, csv_file: str, ordinary_income: float, 
-                           sold_date: Optional[datetime] = None) -> List[Dict]:
-        """Calculate taxes for all stock transactions."""
+    def calculate_all_taxes(self, csv_file: str, ordinary_income: float,
+                           sold_date: Optional[datetime] = None,
+                           sold_only: bool = False) -> List[Dict]:
+        """
+        Calculate taxes for all stock transactions.
+
+        Args:
+            csv_file: Path to the stock CSV file
+            ordinary_income: Ordinary income for tax bracket determination
+            sold_date: Default sale date for rows without a specific Date Sold
+            sold_only: If True, only process rows that have Date Sold filled in
+        """
         if sold_date is None:
             sold_date = datetime.now()
-        
+
         # Load stock data
         df = self.load_stock_data(csv_file)
-        
-        # Get Tesla stock price for the sold date
-        sold_price = self.get_stock_price('TSLA', sold_date)
-        
-        if sold_price == 0:
-            print(f"Warning: Could not fetch Tesla stock price for {sold_date}. Using current price.")
-            sold_price = self.get_stock_price('TSLA', datetime.now())
-        
+
+        # Get default Tesla stock price for rows without a specific sale price
+        default_sold_price = None
+        if not sold_only:
+            default_sold_price = self.get_stock_price('TSLA', sold_date)
+            if default_sold_price == 0:
+                print(f"Warning: Could not fetch Tesla stock price for {sold_date}. Using current price.")
+                default_sold_price = self.get_stock_price('TSLA', datetime.now())
+
         results = []
-        
+
         for index, row in df.iterrows():
             try:
+                # Determine sale date and price for this row
+                row_has_sale = row.get('Date Sold') is not None and pd.notna(row.get('Date Sold'))
+
+                if sold_only and not row_has_sale:
+                    continue  # Skip unsold rows when only processing actual sales
+
+                if row_has_sale:
+                    row_sold_date = row['Date Sold']
+                    row_sold_price = row.get('Sale Price', 0.0)
+                    if row_sold_price == 0.0:
+                        row_sold_price = self.get_stock_price('TSLA', row_sold_date)
+                else:
+                    row_sold_date = sold_date
+                    row_sold_price = default_sold_price
+
                 if row['Stock_Type'] == 'RSU':
-                    result = self.calculate_rsu_taxes(row, sold_date, sold_price, ordinary_income)
+                    result = self.calculate_rsu_taxes(row, row_sold_date, row_sold_price, ordinary_income)
                 elif row['Stock_Type'] == 'ESPP':
-                    result = self.calculate_espp_taxes(row, sold_date, sold_price, ordinary_income)
+                    result = self.calculate_espp_taxes(row, row_sold_date, row_sold_price, ordinary_income)
                 else:
                     continue
-                
+
                 # Skip if calculation failed (couldn't get historical prices)
                 if result is None:
                     print(f"Skipping row {index} due to missing price data")
                     continue
-                
+
                 # Add additional info
                 result['grant_number'] = row.get('Grant Number', 'N/A')
                 result['original_tax_status'] = row.get('Tax Status', 'N/A')
-                
+                result['actually_sold'] = row_has_sale
+
                 results.append(result)
-                
+
             except Exception as e:
                 print(f"Error processing row {index}: {e}")
                 continue
-        
+
         return results
     
     def generate_report(self, results: List[Dict], ordinary_income: float, 
@@ -728,8 +872,644 @@ class TaxCalculator:
         df.to_csv(csv_path, index=False)
         print(f"Results exported to CSV: {csv_path}")
     
-    def calculate_bonus_allocation_proceeds_with_taxes(self, bonus_amount: float, purchase_date: datetime, 
-                                                     rsu_percentage: float, iso_percentage: float, 
+    def calculate_total_tax_liability(self,
+                                     w2_wages: float,
+                                     federal_tax_withheld: float,
+                                     stock_results: List[Dict],
+                                     deduction_amount: Optional[float] = None,
+                                     estimated_payments: float = 0,
+                                     stock_tax_withheld: float = 0,
+                                     interest_income: float = 0,
+                                     rental_result: Optional[Dict] = None,
+                                     itemized_result: Optional[Dict] = None) -> Dict:
+        """
+        Calculate total federal income tax liability for the tax year.
+
+        Args:
+            w2_wages: W-2 Box 1 wages
+            federal_tax_withheld: W-2 Box 2 federal tax withheld
+            stock_results: List of per-transaction results from calculate_all_taxes()
+            deduction_amount: Override deduction amount (ignored if itemized_result provided)
+            estimated_payments: Quarterly estimated tax payments made
+            stock_tax_withheld: Federal tax withheld on stock sales
+            interest_income: Total 1099-INT interest income
+            rental_result: Result from calculate_rental_income() (Schedule E)
+            itemized_result: Result from calculate_itemized_deductions() (Schedule A)
+        """
+        # Step 1: Classify stock results into income categories
+        stock_short_term_gains = 0.0
+        stock_long_term_gains = 0.0
+        stock_ordinary_income = 0.0
+
+        for r in stock_results:
+            ordinary_portion = r.get('ordinary_income_portion', 0)
+            capital_portion = r.get('capital_gain_portion', 0)
+
+            # ESPP ordinary income portion always taxed as ordinary income
+            stock_ordinary_income += ordinary_portion
+
+            if r.get('is_long_term', False):
+                stock_long_term_gains += capital_portion
+            else:
+                # Short-term capital gains taxed as ordinary income
+                stock_short_term_gains += capital_portion
+
+        # Step 2: Aggregate income
+        net_rental_income = rental_result['net_rental_income'] if rental_result else 0
+        total_ordinary_income = (w2_wages + stock_ordinary_income +
+                                 stock_short_term_gains + interest_income +
+                                 net_rental_income)
+        total_long_term_gains = stock_long_term_gains
+
+        agi = total_ordinary_income + total_long_term_gains
+
+        # Step 3: Determine deduction (itemized vs standard)
+        if itemized_result is not None:
+            itemized_total = itemized_result['total_itemized']
+            if itemized_total > self.standard_deduction_single:
+                deduction = itemized_total
+                deduction_type = 'Itemized'
+            else:
+                deduction = self.standard_deduction_single
+                deduction_type = 'Standard (exceeds itemized)'
+        elif deduction_amount is not None:
+            deduction = deduction_amount
+            deduction_type = 'Itemized'
+        else:
+            deduction = self.standard_deduction_single
+            deduction_type = 'Standard'
+
+        # Deduction reduces ordinary income first
+        taxable_ordinary_income = max(0, total_ordinary_income - deduction)
+        excess_deduction = max(0, deduction - total_ordinary_income)
+        taxable_ltcg = max(0, total_long_term_gains - excess_deduction)
+
+        # Step 4: Calculate taxes progressively
+        ordinary_tax, ordinary_brackets = self.calculate_progressive_ordinary_tax(taxable_ordinary_income)
+        ltcg_tax, ltcg_brackets = self.calculate_progressive_ltcg_tax(taxable_ordinary_income, taxable_ltcg)
+
+        # NIIT: net investment income includes interest, ST gains, LT gains, rental income
+        net_investment_income = (total_long_term_gains + stock_short_term_gains +
+                                 interest_income + max(0, net_rental_income))
+        niit = self.calculate_niit(agi, net_investment_income)
+
+        total_tax = ordinary_tax + ltcg_tax + niit
+
+        # Step 5: Calculate net due/refund
+        total_payments = federal_tax_withheld + estimated_payments + stock_tax_withheld
+        net_due = total_tax - total_payments
+
+        return {
+            # Income
+            'w2_wages': w2_wages,
+            'stock_ordinary_income': stock_ordinary_income,
+            'stock_short_term_gains': stock_short_term_gains,
+            'stock_long_term_gains': stock_long_term_gains,
+            'interest_income': interest_income,
+            'net_rental_income': net_rental_income,
+            'total_ordinary_income': total_ordinary_income,
+            'total_long_term_gains': total_long_term_gains,
+            'agi': agi,
+
+            # Deductions
+            'deduction_type': deduction_type,
+            'deduction_amount': deduction,
+            'itemized_detail': itemized_result,
+            'rental_detail': rental_result,
+
+            # Taxable income
+            'taxable_ordinary_income': taxable_ordinary_income,
+            'taxable_ltcg': taxable_ltcg,
+            'total_taxable_income': taxable_ordinary_income + taxable_ltcg,
+
+            # Tax calculation
+            'ordinary_tax': ordinary_tax,
+            'ordinary_tax_brackets': ordinary_brackets,
+            'ltcg_tax': ltcg_tax,
+            'ltcg_tax_brackets': ltcg_brackets,
+            'niit': niit,
+            'net_investment_income': net_investment_income,
+            'total_tax_liability': total_tax,
+
+            # Payments and withholdings
+            'federal_tax_withheld': federal_tax_withheld,
+            'stock_tax_withheld': stock_tax_withheld,
+            'estimated_payments': estimated_payments,
+            'total_payments': total_payments,
+
+            # Result
+            'net_tax_due': max(0, net_due),
+            'refund': max(0, -net_due),
+            'effective_tax_rate': (total_tax / agi * 100) if agi > 0 else 0,
+            'marginal_ordinary_rate': self.calculate_marginal_tax_rate(taxable_ordinary_income),
+            'marginal_ltcg_rate': self.calculate_capital_gains_rate(taxable_ordinary_income),
+        }
+
+    def generate_tax_liability_report(self, liability: Dict, stock_results: List[Dict]) -> str:
+        """Generate a Form 1040-style tax liability report."""
+        lines = []
+        lines.append("=" * 80)
+        lines.append(f"  {self.current_year} FEDERAL INCOME TAX LIABILITY ESTIMATE")
+        lines.append(f"  Single Filer")
+        lines.append("=" * 80)
+        lines.append(f"  Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append("")
+
+        # Income section
+        lines.append("  INCOME")
+        lines.append("  " + "-" * 70)
+        lines.append(f"    W-2 Wages (Box 1):                          ${liability['w2_wages']:>14,.2f}")
+        if liability.get('interest_income', 0) > 0:
+            lines.append(f"    Interest Income (1099-INT):                  ${liability['interest_income']:>14,.2f}")
+        if liability['stock_ordinary_income'] > 0:
+            lines.append(f"    Stock Ordinary Income (ESPP discount):      ${liability['stock_ordinary_income']:>14,.2f}")
+        if liability['stock_short_term_gains'] > 0:
+            lines.append(f"    Short-Term Capital Gains:                    ${liability['stock_short_term_gains']:>14,.2f}")
+        if liability.get('net_rental_income', 0) != 0:
+            val = liability['net_rental_income']
+            if val >= 0:
+                lines.append(f"    Net Rental Income (Schedule E):              ${val:>14,.2f}")
+            else:
+                lines.append(f"    Net Rental Loss (Schedule E):               (${abs(val):>13,.2f})")
+        lines.append(f"                                                 {'':>3}{'-' * 14}")
+        lines.append(f"    Total Ordinary Income:                       ${liability['total_ordinary_income']:>14,.2f}")
+        if liability['total_long_term_gains'] > 0:
+            lines.append(f"    Long-Term Capital Gains:                     ${liability['total_long_term_gains']:>14,.2f}")
+        lines.append(f"                                                 {'':>3}{'-' * 14}")
+        lines.append(f"    Adjusted Gross Income (AGI):                 ${liability['agi']:>14,.2f}")
+        lines.append("")
+
+        # Rental detail (if applicable)
+        rental_detail = liability.get('rental_detail')
+        if rental_detail:
+            pct_label = f"{rental_detail['rental_pct']*100:.0f}%"
+            lines.append("  SCHEDULE E - RENTAL INCOME")
+            lines.append("  " + "-" * 70)
+            lines.append(f"    Rental Usage:                                {pct_label:>14}")
+            lines.append(f"    Rental Income:                               ${rental_detail['rental_income']:>14,.2f}")
+            if rental_detail.get('other_rental_income', 0) > 0:
+                lines.append(f"    Other Income:                                ${rental_detail['other_rental_income']:>14,.2f}")
+            lines.append(f"    Total Rental Income:                         ${rental_detail['total_income']:>14,.2f}")
+            lines.append(f"    Expenses ({pct_label} of property):")
+            exp = rental_detail['expenses']
+            for key, label in [('mortgage_interest', 'Mortgage Interest'),
+                               ('property_taxes', 'Property Taxes'),
+                               ('insurance', 'Insurance'),
+                               ('hoa', 'HOA'),
+                               ('mortgage_insurance', 'Mortgage Insurance'),
+                               ('supplies', 'Supplies'),
+                               ('electricity', 'Electricity'),
+                               ('telephone', 'Telephone'),
+                               ('depreciation', 'Depreciation')]:
+                val = exp.get(key, 0)
+                if val > 0:
+                    lines.append(f"      {label:<40}  (${val:>13,.2f})")
+            lines.append(f"                                                 {'':>3}{'-' * 14}")
+            lines.append(f"    Total Rental Expenses:                      (${rental_detail['total_expenses']:>13,.2f})")
+            lines.append(f"    Net Rental Income:                           ${rental_detail['net_rental_income']:>14,.2f}")
+            lines.append("")
+
+        # Deductions
+        lines.append("  DEDUCTIONS")
+        lines.append("  " + "-" * 70)
+        itemized_detail = liability.get('itemized_detail')
+        if itemized_detail and 'Itemized' in liability['deduction_type']:
+            lines.append(f"    Itemized Deductions (Schedule A):")
+            lines.append(f"      Mortgage Interest (personal {(1-rental_detail['rental_pct'])*100:.0f}%):          ${itemized_detail['mortgage_interest']:>14,.2f}")
+            lines.append(f"      SALT (State tax + property tax):            ${itemized_detail['salt_deduction']:>14,.2f}")
+            if itemized_detail['salt_limited']:
+                lines.append(f"        (Capped at ${itemized_detail['salt_cap']:,.0f}; uncapped: ${itemized_detail['salt_uncapped']:>11,.2f})")
+            if itemized_detail.get('mortgage_insurance', 0) > 0:
+                lines.append(f"      Mortgage Insurance Premium:                 ${itemized_detail['mortgage_insurance']:>14,.2f}")
+            elif itemized_detail.get('mortgage_insurance_phased_out'):
+                lines.append(f"      Mortgage Insurance Premium:                           $0.00")
+                lines.append(f"        (Phased out for AGI > $109,000)")
+            lines.append(f"                                                 {'':>3}{'-' * 14}")
+            lines.append(f"    Total Itemized:                             (${itemized_detail['total_itemized']:>13,.2f})")
+            lines.append(f"    Standard Deduction Comparison:               (${self.standard_deduction_single:>13,.2f})")
+            lines.append(f"    -> Using {liability['deduction_type']}")
+        else:
+            lines.append(f"    {liability['deduction_type']} Deduction ({self.current_year} Single):     (${liability['deduction_amount']:>13,.2f})")
+        lines.append(f"                                                 {'':>3}{'-' * 14}")
+        lines.append(f"    Taxable Ordinary Income:                     ${liability['taxable_ordinary_income']:>14,.2f}")
+        if liability['taxable_ltcg'] > 0:
+            lines.append(f"    Taxable Long-Term Capital Gains:             ${liability['taxable_ltcg']:>14,.2f}")
+        lines.append(f"    Total Taxable Income:                        ${liability['total_taxable_income']:>14,.2f}")
+        lines.append("")
+
+        # Ordinary income tax brackets
+        lines.append("  FEDERAL TAX CALCULATION")
+        lines.append("  " + "-" * 70)
+        lines.append("    Tax on Ordinary Income (Progressive):")
+        for b in liability['ordinary_tax_brackets']:
+            rate_pct = f"{b['rate']*100:.0f}%"
+            lines.append(f"      {rate_pct:>4} on ${b['income_in_bracket']:>12,.2f}:                    ${b['tax_in_bracket']:>12,.2f}")
+        lines.append(f"                                                 {'':>3}{'-' * 14}")
+        lines.append(f"    Subtotal - Ordinary Income Tax:               ${liability['ordinary_tax']:>14,.2f}")
+        lines.append("")
+
+        # LTCG tax
+        if liability['taxable_ltcg'] > 0:
+            lines.append("    Tax on Long-Term Capital Gains:")
+            for b in liability['ltcg_tax_brackets']:
+                rate_pct = f"{b['rate']*100:.0f}%"
+                lines.append(f"      {rate_pct:>4} on ${b['gains_in_bracket']:>12,.2f}:                    ${b['tax_in_bracket']:>12,.2f}")
+            lines.append(f"                                                 {'':>3}{'-' * 14}")
+            lines.append(f"    Subtotal - LTCG Tax:                         ${liability['ltcg_tax']:>14,.2f}")
+            lines.append("")
+
+        # NIIT
+        if liability['niit'] > 0:
+            lines.append(f"    Net Investment Income Tax (3.8%):             ${liability['niit']:>14,.2f}")
+            lines.append(f"      (Net investment income: ${liability.get('net_investment_income', 0):>11,.2f})")
+            lines.append("")
+
+        lines.append(f"                                                 {'':>3}{'=' * 14}")
+        lines.append(f"    TOTAL FEDERAL TAX LIABILITY:                  ${liability['total_tax_liability']:>14,.2f}")
+        lines.append("")
+
+        # Payments and withholdings
+        lines.append("  PAYMENTS & WITHHOLDINGS")
+        lines.append("  " + "-" * 70)
+        lines.append(f"    W-2 Federal Tax Withheld (Box 2):           (${liability['federal_tax_withheld']:>13,.2f})")
+        if liability['stock_tax_withheld'] > 0:
+            lines.append(f"    Stock Sale Withholding:                     (${liability['stock_tax_withheld']:>13,.2f})")
+        if liability['estimated_payments'] > 0:
+            lines.append(f"    Estimated Tax Payments:                     (${liability['estimated_payments']:>13,.2f})")
+        lines.append(f"                                                 {'':>3}{'-' * 14}")
+        lines.append(f"    Total Payments:                             (${liability['total_payments']:>13,.2f})")
+        lines.append("")
+
+        # Result
+        lines.append("  " + "=" * 70)
+        if liability['net_tax_due'] > 0:
+            lines.append(f"    NET TAX DUE:                                 ${liability['net_tax_due']:>14,.2f}")
+        else:
+            lines.append(f"    REFUND:                                      ${liability['refund']:>14,.2f}")
+        lines.append("")
+        lines.append(f"    Effective Tax Rate:                           {liability['effective_tax_rate']:>13.1f}%")
+        lines.append(f"    Marginal Ordinary Rate:                       {liability['marginal_ordinary_rate']*100:>13.0f}%")
+        lines.append(f"    Marginal LTCG Rate:                           {liability['marginal_ltcg_rate']*100:>13.0f}%")
+        lines.append("")
+
+        # Stock transaction detail
+        if stock_results:
+            is_1099b = any(r.get('source') == '1099-B' for r in stock_results)
+
+            if is_1099b:
+                # Show 1099-B summary with wash sale detail
+                summary = self.get_1099b_summary(stock_results)
+                lines.append("  1099-B SUMMARY")
+                lines.append("  " + "-" * 70)
+                lines.append(f"    {'':30} {'Short-Term':>16} {'Long-Term':>16} {'Total':>16}")
+                lines.append("    " + "-" * 64)
+                lines.append(f"    {'Lots':30} {summary['short_term']['count']:>16} {summary['long_term']['count']:>16} {summary['total_count']:>16}")
+                lines.append(f"    {'Shares':30} {summary['short_term']['shares']:>16.3f} {summary['long_term']['shares']:>16.3f} {summary['total_shares']:>16.3f}")
+                lines.append(f"    {'Proceeds':30} ${summary['short_term']['proceeds']:>14,.2f} ${summary['long_term']['proceeds']:>14,.2f} ${summary['total_proceeds']:>14,.2f}")
+                lines.append(f"    {'Cost Basis':30} ${summary['short_term']['cost_basis']:>14,.2f} ${summary['long_term']['cost_basis']:>14,.2f} ${summary['total_cost_basis']:>14,.2f}")
+                if summary['total_wash_sale'] > 0:
+                    lines.append(f"    {'Wash Sale Disallowed':30} ${summary['short_term']['wash_sale']:>14,.2f} ${summary['long_term']['wash_sale']:>14,.2f} ${summary['total_wash_sale']:>14,.2f}")
+                    lines.append(f"    {'Realized Gain/Loss':30} ${summary['short_term']['raw_gain']:>14,.2f} ${summary['long_term']['raw_gain']:>14,.2f} ${summary['short_term']['raw_gain']+summary['long_term']['raw_gain']:>14,.2f}")
+                    lines.append(f"    {'Taxable Gain (adjusted)':30} ${summary['short_term']['taxable_gain']:>14,.2f} ${summary['long_term']['taxable_gain']:>14,.2f} ${summary['total_taxable_gain']:>14,.2f}")
+                else:
+                    lines.append(f"    {'Gain/Loss':30} ${summary['short_term']['taxable_gain']:>14,.2f} ${summary['long_term']['taxable_gain']:>14,.2f} ${summary['total_taxable_gain']:>14,.2f}")
+                lines.append("")
+            else:
+                lines.append("  STOCK TRANSACTION DETAIL")
+                lines.append("  " + "-" * 70)
+                lines.append(f"    {'Type':<6} {'Acquired':<12} {'Shares':>8} {'Gain/Loss':>14} {'Tax Type':<20}")
+                lines.append("    " + "-" * 64)
+                for r in stock_results:
+                    acq_date = r['acquired_date'].strftime('%Y-%m-%d')
+                    gain = r['total_gain']
+                    lines.append(f"    {r['stock_type']:<6} {acq_date:<12} {r['shares']:>8.2f} ${gain:>13,.2f} {r['tax_type']:<20}")
+                lines.append("")
+
+        # Notes
+        lines.append("  NOTES")
+        lines.append("  " + "-" * 70)
+        lines.append(f"    * This is an estimate based on {self.current_year} federal tax brackets.")
+        lines.append("    * Does not account for AMT, tax credits, or other adjustments.")
+        lines.append("    * NIIT applies to single filers with MAGI > $200,000.")
+        lines.append("    * Consult a tax professional for your actual filing.")
+        lines.append("=" * 80)
+
+        return "\n".join(lines)
+
+    def load_w2_data(self, csv_file: str) -> Dict:
+        """
+        Load W-2 data from a CSV file.
+
+        Expected CSV columns: Field, Value, Description
+        Returns a dict with all W-2 fields parsed as appropriate types.
+        """
+        df = pd.read_csv(csv_file)
+        raw = {}
+        for _, row in df.iterrows():
+            field = str(row['Field']).strip()
+            value = row['Value']
+            raw[field] = value
+
+        # Parse into structured dict with numeric conversions
+        w2 = {
+            'tax_year': int(raw.get('tax_year', self.current_year)),
+            'wages': float(raw.get('box1_wages', 0)),
+            'federal_tax_withheld': float(raw.get('box2_federal_withheld', 0)),
+            'ss_wages': float(raw.get('box3_ss_wages', 0)),
+            'ss_tax_withheld': float(raw.get('box4_ss_withheld', 0)),
+            'medicare_wages': float(raw.get('box5_medicare_wages', 0)),
+            'medicare_tax_withheld': float(raw.get('box6_medicare_withheld', 0)),
+            'box12c_life_insurance': float(raw.get('box12c_life_insurance', 0)),
+            'box12d_401k': float(raw.get('box12d_401k', 0)),
+            'box12w_hsa': float(raw.get('box12w_hsa', 0)),
+            'state': str(raw.get('box15_state', '')),
+            'state_wages': float(raw.get('box16_state_wages', 0)),
+            'state_tax_withheld': float(raw.get('box17_state_tax', 0)),
+        }
+
+        # Store any extra fields from box14
+        for key, val in raw.items():
+            if key.startswith('box14_'):
+                w2[key] = float(val) if val else 0
+
+        return w2
+
+    def load_1099b_data(self, csv_file: str) -> List[Dict]:
+        """
+        Load 1099-B CSV data and return stock results compatible with
+        calculate_total_tax_liability().
+
+        The 1099-B data is authoritative for tax filing because it includes
+        wash sale adjustments that per-lot recalculation via yfinance cannot
+        replicate. This method uses the exact figures from the brokerage's
+        1099-B form.
+
+        Expected CSV columns:
+            Term, Date Sold, Date Acquired, Proceeds, Cost Basis,
+            Wash Sale Disallowed, Gain Loss, Grant Number, Shares, Form 8949 Box
+        """
+        df = pd.read_csv(csv_file)
+
+        results = []
+        for _, row in df.iterrows():
+            is_long = str(row['Term']).strip().lower().startswith('long')
+            wash_sale = float(row.get('Wash Sale Disallowed', 0) or 0)
+            raw_gain = float(row['Gain Loss'])
+            # Tax-reportable gain = raw gain + wash sale disallowed
+            # (wash sale losses are added back, increasing taxable gain)
+            taxable_gain = raw_gain + wash_sale
+
+            # Parse dates
+            date_sold = datetime.strptime(str(row['Date Sold']).strip(), '%m/%d/%y')
+            date_acquired = datetime.strptime(str(row['Date Acquired']).strip(), '%m/%d/%y')
+
+            shares = float(row['Shares'])
+            proceeds = float(row['Proceeds'])
+            cost_basis = float(row['Cost Basis'])
+
+            result = {
+                'stock_type': 'RSU',
+                'acquired_date': date_acquired,
+                'sold_date': date_sold,
+                'shares': shares,
+                'acquisition_price': cost_basis / shares if shares > 0 else 0,
+                'sold_price': proceeds / shares if shares > 0 else 0,
+                'proceeds': proceeds,
+                'cost_basis': cost_basis,
+                'total_gain': taxable_gain,
+                'raw_gain': raw_gain,
+                'wash_sale_disallowed': wash_sale,
+                'is_long_term': is_long,
+                'tax_type': 'Long Term Capital Gains' if is_long else 'Short Term Capital Gains (Ordinary Income)',
+                'tax_rate': 0,  # Will be computed by total liability calculator
+                'tax_amount': 0,
+                'ordinary_income_portion': 0,
+                'capital_gain_portion': taxable_gain,
+                'grant_number': str(row.get('Grant Number', 'N/A')),
+                'form_8949_box': str(row.get('Form 8949 Box', '')),
+                'actually_sold': True,
+                'source': '1099-B',
+            }
+
+            results.append(result)
+
+        return results
+
+    def get_1099b_summary(self, stock_results: List[Dict]) -> Dict:
+        """
+        Generate a summary of 1099-B stock results.
+
+        Returns totals for short-term and long-term categories including
+        proceeds, cost basis, wash sale adjustments, and gains.
+        """
+        summary = {
+            'short_term': {'proceeds': 0, 'cost_basis': 0, 'wash_sale': 0, 'raw_gain': 0, 'taxable_gain': 0, 'shares': 0, 'count': 0},
+            'long_term': {'proceeds': 0, 'cost_basis': 0, 'wash_sale': 0, 'raw_gain': 0, 'taxable_gain': 0, 'shares': 0, 'count': 0},
+        }
+
+        for r in stock_results:
+            key = 'long_term' if r.get('is_long_term', False) else 'short_term'
+            summary[key]['proceeds'] += r.get('proceeds', 0)
+            summary[key]['cost_basis'] += r.get('cost_basis', 0)
+            summary[key]['wash_sale'] += r.get('wash_sale_disallowed', 0)
+            summary[key]['raw_gain'] += r.get('raw_gain', r.get('total_gain', 0))
+            summary[key]['taxable_gain'] += r.get('total_gain', 0)
+            summary[key]['shares'] += r.get('shares', 0)
+            summary[key]['count'] += 1
+
+        summary['total_proceeds'] = summary['short_term']['proceeds'] + summary['long_term']['proceeds']
+        summary['total_cost_basis'] = summary['short_term']['cost_basis'] + summary['long_term']['cost_basis']
+        summary['total_wash_sale'] = summary['short_term']['wash_sale'] + summary['long_term']['wash_sale']
+        summary['total_taxable_gain'] = summary['short_term']['taxable_gain'] + summary['long_term']['taxable_gain']
+        summary['total_shares'] = summary['short_term']['shares'] + summary['long_term']['shares']
+        summary['total_count'] = summary['short_term']['count'] + summary['long_term']['count']
+
+        return summary
+
+    def load_1098_data(self, csv_file: str) -> Dict:
+        """
+        Load Form 1098 mortgage data from a CSV file.
+
+        Expected CSV columns: Field, Value, Description
+        Returns a dict with mortgage interest, principal, insurance, property taxes,
+        and property purchase info for depreciation.
+        """
+        df = pd.read_csv(csv_file)
+        raw = {}
+        for _, row in df.iterrows():
+            field = str(row['Field']).strip()
+            value = row['Value']
+            raw[field] = value
+
+        return {
+            'lender': str(raw.get('lender', '')),
+            'tax_year': int(raw.get('tax_year', self.current_year)),
+            'mortgage_interest': float(raw.get('box1_mortgage_interest', 0)),
+            'outstanding_principal': float(raw.get('box2_outstanding_principal', 0)),
+            'origination_date': str(raw.get('box3_origination_date', '')),
+            'mortgage_insurance': float(raw.get('box5_mortgage_insurance', 0)),
+            'property_taxes': float(raw.get('box10_property_taxes', 0)),
+            'purchase_price': float(raw.get('purchase_price', 0)),
+            'purchase_date': str(raw.get('purchase_date', '')),
+            'rental_start_date': str(raw.get('rental_start_date', '')),
+        }
+
+    def load_1099int_data(self, csv_file: str) -> Dict:
+        """
+        Load 1099-INT interest income data from a CSV file.
+
+        Expected CSV columns: Payer, Box 1 Interest, Description
+        Returns a dict with per-payer details and total interest.
+        """
+        df = pd.read_csv(csv_file)
+        payers = []
+        total = 0.0
+        for _, row in df.iterrows():
+            amount = float(row['Box 1 Interest'])
+            payers.append({
+                'payer': str(row['Payer']).strip(),
+                'interest': amount,
+                'description': str(row.get('Description', '')).strip(),
+            })
+            total += amount
+
+        return {
+            'payers': payers,
+            'total_interest': round(total, 2),
+        }
+
+    def calculate_rental_income(self, rental_pct: float,
+                                mortgage_interest: float,
+                                property_taxes: float,
+                                rental_income: float = 0,
+                                other_rental_income: float = 0,
+                                mortgage_insurance: float = 0,
+                                hoa: float = 0,
+                                insurance: float = 0,
+                                supplies: float = 0,
+                                electricity: float = 0,
+                                telephone: float = 0,
+                                home_purchase_price: float = 0,
+                                rental_start_month: int = 1) -> Dict:
+        """
+        Calculate Schedule E rental income and expenses.
+
+        All expense amounts should be the FULL annual totals for the property.
+        They will be multiplied by rental_pct to get the rental portion.
+
+        Args:
+            rental_pct: Rental usage percentage (0-1), e.g. 0.20 for 20%
+            mortgage_interest: Full-year mortgage interest (from 1098/spreadsheet)
+            property_taxes: Full-year property taxes
+            rental_income: Actual rental income received for the year
+            other_rental_income: Other income (security deposit interest, etc.)
+            mortgage_insurance: Annual mortgage insurance premiums
+            hoa: Annual HOA fees
+            insurance: Annual homeowner's insurance
+            supplies: Supplies expense
+            electricity: Electricity expense (rental portion)
+            telephone: Telephone/internet expense (rental portion)
+            home_purchase_price: Purchase price for depreciation
+            rental_start_month: Month rental started (1-12) for partial-year depreciation
+        """
+        total_income = rental_income + other_rental_income
+
+        # Allocate expenses by rental percentage
+        exp = {
+            'mortgage_interest': mortgage_interest * rental_pct,
+            'property_taxes': property_taxes * rental_pct,
+            'mortgage_insurance': mortgage_insurance * rental_pct,
+            'hoa': hoa * rental_pct,
+            'insurance': insurance * rental_pct,
+            'supplies': supplies * rental_pct,
+            'electricity': electricity * rental_pct,
+            'telephone': telephone * rental_pct,
+        }
+
+        # Depreciation: residential rental = 27.5 years, mid-month convention
+        depreciation = 0.0
+        if home_purchase_price > 0:
+            building_value = home_purchase_price * 0.80  # 80% building, 20% land
+            rental_building = building_value * rental_pct
+            annual_depreciation = rental_building / 27.5
+            # Mid-month convention: half month for month placed in service
+            months_in_service = 12 - rental_start_month + 0.5
+            depreciation = annual_depreciation * (months_in_service / 12)
+        exp['depreciation'] = depreciation
+
+        total_expenses = sum(exp.values())
+        net_rental_income = total_income - total_expenses
+
+        return {
+            'rental_income': rental_income,
+            'other_rental_income': other_rental_income,
+            'total_income': total_income,
+            'rental_pct': rental_pct,
+            'expenses': exp,
+            'total_expenses': total_expenses,
+            'net_rental_income': net_rental_income,
+        }
+
+    def calculate_itemized_deductions(self, mortgage_interest: float,
+                                       property_taxes: float,
+                                       state_income_tax: float,
+                                       mortgage_insurance: float,
+                                       rental_pct: float = 0,
+                                       agi: float = 0) -> Dict:
+        """
+        Calculate itemized deductions (Schedule A) for the personal-use portion.
+
+        Args:
+            mortgage_interest: Total annual mortgage interest from 1098
+            property_taxes: Total annual property taxes from 1098
+            state_income_tax: State income tax withheld from W-2
+            mortgage_insurance: Total annual mortgage insurance from 1098
+            rental_pct: Rental usage percentage (0-1), reduces personal portion
+            agi: AGI for mortgage insurance phaseout check
+
+        Returns:
+            Dict with deduction components and total
+        """
+        personal_pct = 1.0 - rental_pct
+
+        # Personal-use mortgage interest
+        personal_mortgage_interest = mortgage_interest * personal_pct
+
+        # SALT deduction: state/local income tax + personal property taxes
+        # 2025+: cap is $40,000 per updated Schedule A ($20,000 for MFS)
+        # Pre-2025: cap was $10,000 under TCJA
+        personal_property_taxes = property_taxes * personal_pct
+        salt_uncapped = state_income_tax + personal_property_taxes
+        salt_cap = 40000 if self.current_year >= 2025 else 10000
+        salt_deduction = min(salt_uncapped, salt_cap)
+
+        # Mortgage insurance premium deduction
+        # Phases out for AGI > $100,000 (fully phased out at $109,000 for single)
+        personal_mortgage_insurance = 0.0
+        if agi <= 100000:
+            personal_mortgage_insurance = mortgage_insurance * personal_pct
+        elif agi < 109000:
+            phaseout_pct = (109000 - agi) / 9000
+            personal_mortgage_insurance = mortgage_insurance * personal_pct * phaseout_pct
+        # else: fully phased out
+
+        total_itemized = personal_mortgage_interest + salt_deduction + personal_mortgage_insurance
+
+        return {
+            'mortgage_interest': personal_mortgage_interest,
+            'salt_state_income_tax': state_income_tax,
+            'salt_property_taxes': personal_property_taxes,
+            'salt_uncapped': salt_uncapped,
+            'salt_deduction': salt_deduction,
+            'salt_cap': salt_cap,
+            'salt_limited': salt_uncapped > salt_cap,
+            'mortgage_insurance': personal_mortgage_insurance,
+            'mortgage_insurance_phased_out': agi >= 109000,
+            'total_itemized': total_itemized,
+        }
+
+    def calculate_bonus_allocation_proceeds_with_taxes(self, bonus_amount: float, purchase_date: datetime,
+                                                     rsu_percentage: float, iso_percentage: float,
                                                      target_price: float, ordinary_income: float = 300000) -> Dict[str, float]:
         """
         Calculate proceeds from a bonus distributed between RSUs and ISOs, including tax impacts.
@@ -956,74 +1736,6 @@ Return on Investment: {results['total_return_percentage']:.2f}%
         """
         
         return report
-
-    def print_bonus_allocation_tax_report(self, results: Dict[str, float]) -> str:
-        """Generate a formatted report for bonus allocation calculation including tax impacts."""
-        
-        report = f"""
-================================================================================
-BONUS ALLOCATION WITH TAX IMPACT ANALYSIS
-================================================================================
-Bonus Amount: ${results['bonus_amount']:,.2f}
-Purchase Date: {results['purchase_date']}
-Historical Stock Price: ${results['historical_price']:.2f}
-Target Sale Price: ${results['target_price']:.2f}
-Ordinary Income: ${results['ordinary_income']:,.2f}
-
-ALLOCATION BREAKDOWN
-----------------------------------------
-RSU Allocation: {results['rsu_percentage']:.1f}% = ${results['rsu_allocation']:,.2f}
-ISO Allocation: {results['iso_percentage']:.1f}% = ${results['iso_allocation']:,.2f}
-
-SHARES CALCULATION
-----------------------------------------
-RSU Shares: ${results['rsu_allocation']:,.2f} ÷ ${results['historical_price']:.2f} = {results['rsu_shares']:.4f} shares
-ISO Shares (×3 multiplier): {results['iso_shares_total']:.4f} shares
-
-PRE-TAX PROCEEDS
-----------------------------------------
-RSU Proceeds: {results['rsu_shares']:.4f} × ${results['target_price']:.2f} = ${results['rsu_proceeds']:,.2f}
-ISO Proceeds (Cashless): {results['iso_shares_total']:.4f} × ${results['target_price'] - results['historical_price']:.2f} = ${results['iso_proceeds']:,.2f}
-Total Pre-Tax Proceeds: ${results['total_proceeds']:,.2f}
-
-TAX CALCULATIONS
-----------------------------------------
-RSU Taxes (Long-Term Capital Gains at {results['ltcg_tax_rate']*100:.1f}%):
-  • RSU Gain: ${results['rsu_gain']:,.2f}
-  • LTCG Tax: ${results['rsu_taxes']:,.2f}
-  • After-Tax RSU Proceeds: ${results['rsu_after_tax_proceeds']:,.2f}
-
-ISO Taxes (Ordinary Income at {results['marginal_tax_rate']*100:.1f}%):
-  • ISO Gain: ${results['iso_proceeds']:,.2f}
-  • Ordinary Income Tax: ${results['iso_taxes']:,.2f}
-  • After-Tax ISO Proceeds: ${results['iso_after_tax_proceeds']:,.2f}
-
-Total Taxes: ${results['total_taxes']:,.2f}
-Effective Tax Rate: {results['effective_tax_rate']:.1f}%
-
-AFTER-TAX RESULTS
-----------------------------------------
-Total After-Tax Proceeds: ${results['total_after_tax_proceeds']:,.2f}
-Net After-Tax Gain/Loss: ${results['net_after_tax_gain']:,.2f}
-After-Tax ROI: {results['after_tax_roi']:.1f}%
-
-COMPARISON
-----------------------------------------
-Pre-Tax ROI: {results['total_return_percentage']:.1f}%
-After-Tax ROI: {results['after_tax_roi']:.1f}%
-Tax Impact: {results['total_return_percentage'] - results['after_tax_roi']:.1f} percentage points
-
-NOTES
-----------------------------------------
-• RSUs held 1+ year qualify for long-term capital gains rates
-• ISO cashless exercise gains taxed as ordinary income
-• Assumes sale occurs 1+ year after grant date
-• State taxes not included in calculation
-================================================================================
-        """
-        
-        return report
-
 
 def main():
     """Main function to run the tax calculator."""

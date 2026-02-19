@@ -79,6 +79,9 @@ command_line_results.csv
 ehthumbs.db
 Thumbs.db
 
+# Claude Code
+.claude/
+
 # Temporary files
 *.tmp
 *.temp
