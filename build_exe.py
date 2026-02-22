@@ -25,11 +25,11 @@ def open_browser():
     """Open the default browser after a short delay to let Flask start."""
     import time
     time.sleep(1.5)
-    webbrowser.open('http://localhost:5000')
+    webbrowser.open('http://localhost:8080')
 
 
 if __name__ == '__main__':
     threading.Thread(target=open_browser, daemon=True).start()
-    print('Starting Tax App — opening browser to http://localhost:5000')
+    print('Starting Tax App — opening browser to http://localhost:8080')
     print('Press Ctrl+C to quit.')
-    app.run(debug=False, port=5000)
+    app.run(debug=False, port=8080)
