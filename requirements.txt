@@ -1,0 +1,10 @@
+pandas
+numpy
+pdfplumber
+Pillow
+pytesseract     # optional, for OCR of scanned forms
+pdf2image       # optional, for OCR of scanned forms
+yfinance        # stock price fetching
+requests
+beautifulsoup4
+flask

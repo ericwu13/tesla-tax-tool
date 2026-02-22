@@ -25,7 +25,6 @@ MANIFEST
 
 # PyInstaller
 *.manifest
-*.spec
 
 # Unit test / coverage reports
 htmlcov/
@@ -86,3 +85,6 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
+
+# Binary archives
+*.zip

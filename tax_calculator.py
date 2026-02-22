@@ -14,41 +14,43 @@ import os
 
 class TaxCalculator:
     """Class to handle tax calculations for Tesla stock grants."""
-    
-    def __init__(self, tax_year: int = None):
+
+    VALID_FILING_STATUSES = ('single', 'mfj', 'mfs', 'hoh')
+
+    def __init__(self, tax_year: int = None, filing_status: str = 'single'):
         # Tax year defaults to current year, but can be overridden (e.g., filing 2025 in 2026)
         self.current_year = tax_year if tax_year else datetime.now().year
 
-        # Initialize tax brackets (will be fetched dynamically)
+        # Filing status
+        filing_status = filing_status.lower()
+        if filing_status not in self.VALID_FILING_STATUSES:
+            raise ValueError(f"Invalid filing status '{filing_status}'. Must be one of: {self.VALID_FILING_STATUSES}")
+        self.filing_status = filing_status
+
+        # Active brackets (set by _load_tax_brackets based on filing status)
+        self.tax_brackets = []
+        self.capital_gains_brackets = []
+        self.standard_deduction = 15000
+        self.niit_threshold = 200000
+
+        # Legacy aliases for backward compatibility
         self.tax_brackets_single = []
         self.capital_gains_brackets_single = []
-
-        # Standard Deduction (Single filer) - updated by bracket loading
         self.standard_deduction_single = 15000
-
-        # NIIT threshold (statutory, does not adjust for inflation)
         self.niit_threshold_single = 200000
+
         self.niit_rate = 0.038
 
-        # California state tax brackets (2025 single filer)
-        # Based on CA FTB 2025 tax rate schedules
-        self.ca_tax_brackets_single = [
-            (0, 0.01),           # 1% on income $0 to $10,756
-            (10756, 0.02),       # 2% on income $10,757 to $25,499
-            (25499, 0.04),       # 4% on income $25,500 to $40,245
-            (40245, 0.06),       # 6% on income $40,246 to $55,866
-            (55866, 0.08),       # 8% on income $55,867 to $70,606
-            (70606, 0.093),      # 9.3% on income $70,607 to $360,659
-            (360659, 0.103),     # 10.3% on income $360,660 to $432,787
-            (432787, 0.113),     # 11.3% on income $432,788 to $721,314
-            (721314, 0.123),     # 12.3% on income over $721,314
-        ]
+        # CA state brackets and deductions (set by _load_tax_brackets)
+        self.ca_tax_brackets = []
+        self.ca_standard_deduction = 5540
+        # Legacy alias
+        self.ca_tax_brackets_single = []
+        self.ca_standard_deduction_single = 5540
+
         # CA Mental Health Services Tax: additional 1% on taxable income over $1,000,000
         self.ca_mental_health_threshold = 1000000
         self.ca_mental_health_rate = 0.01
-
-        # CA standard deduction (single filer, 2025)
-        self.ca_standard_deduction_single = 5540
 
         # CA SDI rate (informational - already withheld via W-2 box 14)
         self.ca_sdi_rate = 0.012
@@ -70,48 +72,120 @@ class TaxCalculator:
 
     def _apply_inflation_adjustment(self, inflation_factor):
         """Apply inflation adjustment to tax brackets from 2025 base values."""
-        self.tax_brackets_single = [
+        self.tax_brackets = [
             (int(t * inflation_factor) if t > 0 else 0, r)
-            for t, r in self.tax_brackets_single
+            for t, r in self.tax_brackets
         ]
-        self.capital_gains_brackets_single = [
+        self.capital_gains_brackets = [
             (int(t * inflation_factor) if t > 0 else 0, r)
-            for t, r in self.capital_gains_brackets_single
+            for t, r in self.capital_gains_brackets
         ]
-        self.standard_deduction_single = int(self.standard_deduction_single * inflation_factor)
+        self.standard_deduction = int(self.standard_deduction * inflation_factor)
+        # Keep legacy aliases in sync
+        self.tax_brackets_single = self.tax_brackets
+        self.capital_gains_brackets_single = self.capital_gains_brackets
+        self.standard_deduction_single = self.standard_deduction
 
     def _use_2025_tax_brackets(self):
         """Hardcoded 2025 tax brackets - IRS Rev. Proc. 2024-40."""
-        self.tax_brackets_single = [
-            (0, 0.10),          # 10% on income $0 to $11,925
-            (11925, 0.12),      # 12% on income $11,926 to $48,475
-            (48475, 0.22),      # 22% on income $48,476 to $103,350
-            (103350, 0.24),     # 24% on income $103,351 to $197,300
-            (197300, 0.32),     # 32% on income $197,301 to $250,525
-            (250525, 0.35),     # 35% on income $250,526 to $626,350
-            (626350, 0.37)      # 37% on income over $626,350
-        ]
+        # Federal Ordinary Income Brackets by filing status
+        brackets_by_status = {
+            'single': [
+                (0, 0.10), (11925, 0.12), (48475, 0.22), (103350, 0.24),
+                (197300, 0.32), (250525, 0.35), (626350, 0.37),
+            ],
+            'mfj': [
+                (0, 0.10), (23850, 0.12), (96950, 0.22), (206700, 0.24),
+                (394600, 0.32), (501050, 0.35), (751600, 0.37),
+            ],
+            'mfs': [
+                (0, 0.10), (11925, 0.12), (48475, 0.22), (103350, 0.24),
+                (197300, 0.32), (250525, 0.35), (375800, 0.37),
+            ],
+            'hoh': [
+                (0, 0.10), (17000, 0.12), (64850, 0.22), (103350, 0.24),
+                (197300, 0.32), (250500, 0.35), (626350, 0.37),
+            ],
+        }
 
-        # 2025 Capital Gains Tax Brackets (Single filer)
-        self.capital_gains_brackets_single = [
-            (0, 0.0),           # 0% on taxable income up to $48,350
-            (48350, 0.15),      # 15% on taxable income $48,351 to $533,400
-            (533400, 0.20)      # 20% on taxable income over $533,400
-        ]
+        # LTCG Brackets by filing status
+        ltcg_by_status = {
+            'single': [(0, 0.0), (48350, 0.15), (533400, 0.20)],
+            'mfj':    [(0, 0.0), (96700, 0.15), (600050, 0.20)],
+            'mfs':    [(0, 0.0), (48350, 0.15), (300000, 0.20)],
+            'hoh':    [(0, 0.0), (64750, 0.15), (566700, 0.20)],
+        }
+
+        # Standard Deductions
+        std_deduction_by_status = {
+            'single': 15000, 'mfj': 30000, 'mfs': 15000, 'hoh': 22500,
+        }
+
+        # NIIT Thresholds (statutory, does not adjust for inflation)
+        niit_by_status = {
+            'single': 200000, 'mfj': 250000, 'mfs': 125000, 'hoh': 200000,
+        }
+
+        # Set active brackets based on filing status
+        self.tax_brackets = brackets_by_status[self.filing_status]
+        self.capital_gains_brackets = ltcg_by_status[self.filing_status]
+        self.standard_deduction = std_deduction_by_status[self.filing_status]
+        self.niit_threshold = niit_by_status[self.filing_status]
+
+        # Keep legacy aliases in sync for backward compatibility
+        self.tax_brackets_single = self.tax_brackets
+        self.capital_gains_brackets_single = self.capital_gains_brackets
+        self.standard_deduction_single = self.standard_deduction
+        self.niit_threshold_single = self.niit_threshold
+
+        # CA State Brackets by filing status
+        ca_brackets_by_status = {
+            'single': [
+                (0, 0.01), (10756, 0.02), (25499, 0.04), (40245, 0.06),
+                (55866, 0.08), (70606, 0.093), (360659, 0.103),
+                (432787, 0.113), (721314, 0.123),
+            ],
+            'mfj': [
+                (0, 0.01), (21512, 0.02), (50998, 0.04), (80490, 0.06),
+                (111732, 0.08), (141212, 0.093), (721318, 0.103),
+                (865574, 0.113), (1442628, 0.123),
+            ],
+            'mfs': [
+                (0, 0.01), (10756, 0.02), (25499, 0.04), (40245, 0.06),
+                (55866, 0.08), (70606, 0.093), (360659, 0.103),
+                (432787, 0.113), (721314, 0.123),
+            ],
+            'hoh': [
+                (0, 0.01), (21527, 0.02), (51000, 0.04), (65744, 0.06),
+                (81364, 0.08), (96104, 0.093), (490493, 0.103),
+                (588617, 0.113), (980987, 0.123),
+            ],
+        }
+
+        ca_std_deduction_by_status = {
+            'single': 5540, 'mfj': 11080, 'mfs': 5540, 'hoh': 11080,
+        }
+
+        self.ca_tax_brackets = ca_brackets_by_status[self.filing_status]
+        self.ca_standard_deduction = ca_std_deduction_by_status[self.filing_status]
+
+        # Keep legacy aliases in sync
+        self.ca_tax_brackets_single = self.ca_tax_brackets
+        self.ca_standard_deduction_single = self.ca_standard_deduction
         
     def calculate_marginal_tax_rate(self, ordinary_income: float) -> float:
         """Calculate the marginal tax rate based on ordinary income."""
-        for threshold, rate in reversed(self.tax_brackets_single):
+        for threshold, rate in reversed(self.tax_brackets):
             if ordinary_income > threshold:
                 return rate
-        return self.tax_brackets_single[0][1]
-    
+        return self.tax_brackets[0][1]
+
     def calculate_capital_gains_rate(self, ordinary_income: float) -> float:
         """Calculate the capital gains tax rate based on ordinary income."""
-        for threshold, rate in reversed(self.capital_gains_brackets_single):
+        for threshold, rate in reversed(self.capital_gains_brackets):
             if ordinary_income > threshold:
                 return rate
-        return self.capital_gains_brackets_single[0][1]
+        return self.capital_gains_brackets[0][1]
     
     def calculate_progressive_ordinary_tax(self, taxable_ordinary_income: float) -> Tuple[float, List[Dict]]:
         """
@@ -128,12 +202,12 @@ class TaxCalculator:
         bracket_details = []
         remaining_income = taxable_ordinary_income
 
-        for i, (threshold, rate) in enumerate(self.tax_brackets_single):
+        for i, (threshold, rate) in enumerate(self.tax_brackets):
             if remaining_income <= 0:
                 break
 
-            if i + 1 < len(self.tax_brackets_single):
-                next_threshold = self.tax_brackets_single[i + 1][0]
+            if i + 1 < len(self.tax_brackets):
+                next_threshold = self.tax_brackets[i + 1][0]
                 bracket_width = next_threshold - threshold
             else:
                 bracket_width = remaining_income
@@ -168,12 +242,12 @@ class TaxCalculator:
         remaining_gains = long_term_gains
         income_already_used = taxable_ordinary_income
 
-        for i, (threshold, rate) in enumerate(self.capital_gains_brackets_single):
+        for i, (threshold, rate) in enumerate(self.capital_gains_brackets):
             if remaining_gains <= 0:
                 break
 
-            if i + 1 < len(self.capital_gains_brackets_single):
-                next_threshold = self.capital_gains_brackets_single[i + 1][0]
+            if i + 1 < len(self.capital_gains_brackets):
+                next_threshold = self.capital_gains_brackets[i + 1][0]
             else:
                 next_threshold = float('inf')
 
@@ -204,7 +278,7 @@ class TaxCalculator:
         Calculate Net Investment Income Tax (3.8% surtax).
         Applies to single filers with MAGI > $200,000.
         """
-        excess_agi = max(0, agi - self.niit_threshold_single)
+        excess_agi = max(0, agi - self.niit_threshold)
         niit_base = min(excess_agi, net_investment_income)
         return niit_base * self.niit_rate
 
@@ -220,12 +294,12 @@ class TaxCalculator:
         bracket_details = []
         remaining = taxable_income
 
-        for i, (threshold, rate) in enumerate(self.ca_tax_brackets_single):
+        for i, (threshold, rate) in enumerate(self.ca_tax_brackets):
             if remaining <= 0:
                 break
 
-            if i + 1 < len(self.ca_tax_brackets_single):
-                next_threshold = self.ca_tax_brackets_single[i + 1][0]
+            if i + 1 < len(self.ca_tax_brackets):
+                next_threshold = self.ca_tax_brackets[i + 1][0]
                 bracket_width = next_threshold - threshold
             else:
                 bracket_width = remaining
@@ -282,11 +356,11 @@ class TaxCalculator:
                            net_rental_income)
 
         # CA deduction
-        if ca_itemized_deductions is not None and ca_itemized_deductions > self.ca_standard_deduction_single:
+        if ca_itemized_deductions is not None and ca_itemized_deductions > self.ca_standard_deduction:
             ca_deduction = ca_itemized_deductions
             ca_deduction_type = 'Itemized'
         else:
-            ca_deduction = self.ca_standard_deduction_single
+            ca_deduction = self.ca_standard_deduction
             ca_deduction_type = 'Standard'
 
         ca_taxable_income = max(0, ca_total_income - ca_deduction)
@@ -926,17 +1000,17 @@ class TaxCalculator:
         # Step 3: Determine deduction (itemized vs standard)
         if itemized_result is not None:
             itemized_total = itemized_result['total_itemized']
-            if itemized_total > self.standard_deduction_single:
+            if itemized_total > self.standard_deduction:
                 deduction = itemized_total
                 deduction_type = 'Itemized'
             else:
-                deduction = self.standard_deduction_single
+                deduction = self.standard_deduction
                 deduction_type = 'Standard (exceeds itemized)'
         elif deduction_amount is not None:
             deduction = deduction_amount
             deduction_type = 'Itemized'
         else:
-            deduction = self.standard_deduction_single
+            deduction = self.standard_deduction
             deduction_type = 'Standard'
 
         # Deduction reduces ordinary income first
@@ -1009,8 +1083,12 @@ class TaxCalculator:
         """Generate a Form 1040-style tax liability report."""
         lines = []
         lines.append("=" * 80)
+        status_labels = {
+            'single': 'Single', 'mfj': 'Married Filing Jointly',
+            'mfs': 'Married Filing Separately', 'hoh': 'Head of Household',
+        }
         lines.append(f"  {self.current_year} FEDERAL INCOME TAX LIABILITY ESTIMATE")
-        lines.append(f"  Single Filer")
+        lines.append(f"  {status_labels.get(self.filing_status, self.filing_status)}")
         lines.append("=" * 80)
         lines.append(f"  Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append("")
@@ -1075,7 +1153,10 @@ class TaxCalculator:
         itemized_detail = liability.get('itemized_detail')
         if itemized_detail and 'Itemized' in liability['deduction_type']:
             lines.append(f"    Itemized Deductions (Schedule A):")
-            lines.append(f"      Mortgage Interest (personal {(1-rental_detail['rental_pct'])*100:.0f}%):          ${itemized_detail['mortgage_interest']:>14,.2f}")
+            if rental_detail:
+                lines.append(f"      Mortgage Interest (personal {(1-rental_detail['rental_pct'])*100:.0f}%):          ${itemized_detail['mortgage_interest']:>14,.2f}")
+            else:
+                lines.append(f"      Mortgage Interest:                         ${itemized_detail['mortgage_interest']:>14,.2f}")
             lines.append(f"      SALT (State tax + property tax):            ${itemized_detail['salt_deduction']:>14,.2f}")
             if itemized_detail['salt_limited']:
                 lines.append(f"        (Capped at ${itemized_detail['salt_cap']:,.0f}; uncapped: ${itemized_detail['salt_uncapped']:>11,.2f})")
@@ -1083,13 +1164,13 @@ class TaxCalculator:
                 lines.append(f"      Mortgage Insurance Premium:                 ${itemized_detail['mortgage_insurance']:>14,.2f}")
             elif itemized_detail.get('mortgage_insurance_phased_out'):
                 lines.append(f"      Mortgage Insurance Premium:                           $0.00")
-                lines.append(f"        (Phased out for AGI > $109,000)")
+                lines.append(f"        (Phased out for AGI > $110,000)")
             lines.append(f"                                                 {'':>3}{'-' * 14}")
             lines.append(f"    Total Itemized:                             (${itemized_detail['total_itemized']:>13,.2f})")
-            lines.append(f"    Standard Deduction Comparison:               (${self.standard_deduction_single:>13,.2f})")
+            lines.append(f"    Standard Deduction Comparison:               (${self.standard_deduction:>13,.2f})")
             lines.append(f"    -> Using {liability['deduction_type']}")
         else:
-            lines.append(f"    {liability['deduction_type']} Deduction ({self.current_year} Single):     (${liability['deduction_amount']:>13,.2f})")
+            lines.append(f"    {liability['deduction_type']} Deduction ({self.current_year}):              (${liability['deduction_amount']:>13,.2f})")
         lines.append(f"                                                 {'':>3}{'-' * 14}")
         lines.append(f"    Taxable Ordinary Income:                     ${liability['taxable_ordinary_income']:>14,.2f}")
         if liability['taxable_ltcg'] > 0:
@@ -1190,7 +1271,7 @@ class TaxCalculator:
         lines.append("  " + "-" * 70)
         lines.append(f"    * This is an estimate based on {self.current_year} federal tax brackets.")
         lines.append("    * Does not account for AMT, tax credits, or other adjustments.")
-        lines.append("    * NIIT applies to single filers with MAGI > $200,000.")
+        lines.append(f"    * NIIT applies when MAGI > ${self.niit_threshold:,}.")
         lines.append("    * Consult a tax professional for your actual filing.")
         lines.append("=" * 80)
 
@@ -1476,22 +1557,26 @@ class TaxCalculator:
         personal_mortgage_interest = mortgage_interest * personal_pct
 
         # SALT deduction: state/local income tax + personal property taxes
-        # 2025+: cap is $40,000 per updated Schedule A ($20,000 for MFS)
-        # Pre-2025: cap was $10,000 under TCJA
+        # 2025+: cap is $40,000 ($20,000 for MFS). Pre-2025: $10,000 under TCJA.
         personal_property_taxes = property_taxes * personal_pct
         salt_uncapped = state_income_tax + personal_property_taxes
-        salt_cap = 40000 if self.current_year >= 2025 else 10000
+        if self.current_year >= 2025:
+            salt_cap = 20000 if self.filing_status == 'mfs' else 40000
+        else:
+            salt_cap = 5000 if self.filing_status == 'mfs' else 10000
         salt_deduction = min(salt_uncapped, salt_cap)
 
         # Mortgage insurance premium deduction
-        # Phases out for AGI > $100,000 (fully phased out at $109,000 for single)
+        # Expired after 2021; reinstated for tax year 2026+ by the One Big Beautiful Bill Act.
+        # For 2026+: phases out for AGI > $100,000 (fully phased out at $110,000).
         personal_mortgage_insurance = 0.0
-        if agi <= 100000:
-            personal_mortgage_insurance = mortgage_insurance * personal_pct
-        elif agi < 109000:
-            phaseout_pct = (109000 - agi) / 9000
-            personal_mortgage_insurance = mortgage_insurance * personal_pct * phaseout_pct
-        # else: fully phased out
+        if self.current_year >= 2026:
+            if agi <= 100000:
+                personal_mortgage_insurance = mortgage_insurance * personal_pct
+            elif agi < 110000:
+                phaseout_pct = (110000 - agi) / 10000
+                personal_mortgage_insurance = mortgage_insurance * personal_pct * phaseout_pct
+            # else: fully phased out
 
         total_itemized = personal_mortgage_interest + salt_deduction + personal_mortgage_insurance
 
@@ -1504,7 +1589,7 @@ class TaxCalculator:
             'salt_cap': salt_cap,
             'salt_limited': salt_uncapped > salt_cap,
             'mortgage_insurance': personal_mortgage_insurance,
-            'mortgage_insurance_phased_out': agi >= 109000,
+            'mortgage_insurance_phased_out': self.current_year >= 2026 and agi >= 110000,
             'total_itemized': total_itemized,
         }
 

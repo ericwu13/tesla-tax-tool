@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tax Calculator</title>
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --card: #fff;
+    --border: #d1d5db;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --green: #059669;
+    --red: #dc2626;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+  h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--muted); font-weight: 500; }
+
+  /* Settings bar */
+  .settings {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .settings label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8rem;
+    color: var(--muted);
+    gap: 0.25rem;
+  }
+  .settings select, .settings input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    background: var(--card);
+  }
+
+  /* Drop zone */
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 3rem 2rem;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    margin-bottom: 1.5rem;
+    position: relative;
+  }
+  .dropzone.active {
+    border-color: var(--accent);
+    background: #eff6ff;
+  }
+  .dropzone p { margin-bottom: 0.5rem; }
+  .dropzone .hint { font-size: 0.8rem; }
+  .dropzone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+  .card h3 {
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card h3 .tag {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    background: #e0e7ff;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .card .fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem 1.5rem;
+  }
+  .card .field {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+  }
+  .card .field span:first-child { color: var(--muted); }
+  .card .field input {
+    width: 120px;
+    text-align: right;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  /* Buttons */
+  button {
+    padding: 0.6rem 1.5rem;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled {
+    background: var(--border);
+    cursor: not-allowed;
+  }
+
+  /* Summary cards */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .summary-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+  }
+  .summary-card h3 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+  .summary-card .big-number {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .summary-card .big-number.refund { color: var(--green); }
+  .summary-card .big-number.due { color: var(--red); }
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    padding: 0.15rem 0;
+    color: var(--muted);
+  }
+  .summary-row span:last-child { color: var(--text); font-weight: 500; }
+
+  /* Report */
+  .report {
+    background: #1e293b;
+    color: #e2e8f0;
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    font-family: 'SF Mono', 'Consolas', 'Courier New', monospace;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    line-height: 1.6;
+    margin-top: 1rem;
+  }
+
+  /* Status */
+  .status {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    display: none;
+  }
+  .status.info { display: block; background: #dbeafe; color: #1e40af; }
+  .status.error { display: block; background: #fee2e2; color: var(--red); }
+  .status.success { display: block; background: #d1fae5; color: var(--green); }
+
+  .hidden { display: none; }
+
+  /* Raw text toggle */
+  .raw-toggle {
+    font-size: 0.75rem;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-weight: 400;
+    text-decoration: underline;
+    margin-top: 0.5rem;
+  }
+  .raw-text {
+    background: #f8f9fa;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.75rem;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.7rem;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-top: 0.5rem;
+    color: var(--muted);
+  }
+
+  /* Spinner */
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 0.5rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<h1>Tax Calculator</h1>
+
+<div class="settings">
+  <label>
+    Filing Status
+    <select id="filingStatus">
+      <option value="single">Single</option>
+      <option value="mfj">Married Filing Jointly</option>
+      <option value="mfs">Married Filing Separately</option>
+      <option value="hoh">Head of Household</option>
+    </select>
+  </label>
+  <label>
+    Tax Year
+    <input type="number" id="taxYear" value="2025" min="2020" max="2030">
+  </label>
+  <label>
+    Estimated Payments
+    <input type="number" id="estimatedPayments" value="0" min="0" step="100" placeholder="$0">
+  </label>
+</div>
+
+<div class="card" style="margin-bottom:1.5rem">
+  <h3>Deductions <span class="tag">Manual Entry</span></h3>
+  <div class="fields">
+    <div class="field">
+      <span>Annual Mortgage Interest ($)</span>
+      <input type="number" id="mortgageInterest" value="" min="0" step="100" placeholder="from 1098 Box 1">
+    </div>
+    <div class="field">
+      <span>Annual Property Tax ($)</span>
+      <input type="number" id="propertyTax" value="" min="0" step="100" placeholder="e.g. 12000">
+    </div>
+    <div class="field" style="align-items:center;color:var(--muted);font-size:0.8rem">— or estimate property tax from home value —</div>
+    <div class="field">
+      <span>Home Value ($)</span>
+      <input type="number" id="homeValue" value="" min="0" step="10000" placeholder="e.g. 1500000">
+    </div>
+    <div class="field">
+      <span>Tax Rate (%)</span>
+      <input type="number" id="taxRate" value="1.2" min="0" max="5" step="0.01">
+    </div>
+    <div class="field">
+      <span>Rental Use (%)</span>
+      <input type="number" id="rentalPct" value="0" min="0" max="100" step="1" placeholder="0 if none">
+    </div>
+  </div>
+  <p id="propTaxEstimate" style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem"></p>
+</div>
+
+<div class="dropzone" id="dropzone">
+  <p>Drop PDF tax forms here or click to browse</p>
+  <p class="hint">Supports W-2, 1099-B, 1099-INT, 1098</p>
+  <input type="file" id="fileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp">
+</div>
+
+<div class="status" id="status"></div>
+
+<div id="formsSection" class="hidden">
+  <h2>Extracted Data — review and edit values</h2>
+  <div id="formCards"></div>
+  <button class="btn-primary" id="calcBtn" onclick="calculate()">Calculate Taxes</button>
+</div>
+
+<div id="summarySection" class="hidden">
+  <h2>Summary</h2>
+  <div class="summary-grid">
+    <div class="summary-card">
+      <h3>Federal</h3>
+      <div class="big-number" id="fedResult"></div>
+      <div class="summary-row"><span>Total Income (AGI)</span><span id="fedAgi"></span></div>
+      <div class="summary-row"><span>Deductions</span><span id="fedDeduction"></span></div>
+      <div class="summary-row"><span>Taxable Income</span><span id="fedTaxable"></span></div>
+      <div class="summary-row"><span>Federal Tax</span><span id="fedTax"></span></div>
+      <div class="summary-row"><span>Withheld / Paid</span><span id="fedWithheld"></span></div>
+      <div class="summary-row"><span>Effective Rate</span><span id="fedRate"></span></div>
+    </div>
+    <div class="summary-card">
+      <h3>California</h3>
+      <div class="big-number" id="caResult"></div>
+      <div class="summary-row"><span>Total Income</span><span id="caIncome"></span></div>
+      <div class="summary-row"><span>Taxable Income</span><span id="caTaxable"></span></div>
+      <div class="summary-row"><span>CA Tax</span><span id="caTax"></span></div>
+      <div class="summary-row"><span>Withheld</span><span id="caWithheld"></span></div>
+      <div class="summary-row"><span>Effective Rate</span><span id="caRate"></span></div>
+    </div>
+  </div>
+</div>
+
+<div id="reportSection" class="hidden">
+  <h2>Detailed Report</h2>
+  <div class="report" id="reportOutput"></div>
+</div>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const status = document.getElementById('status');
+const formsSection = document.getElementById('formsSection');
+const formCards = document.getElementById('formCards');
+const reportSection = document.getElementById('reportSection');
+const reportOutput = document.getElementById('reportOutput');
+const calcBtn = document.getElementById('calcBtn');
+
+let scannedForms = [];
+
+// Property tax estimate from home value
+const homeValueInput = document.getElementById('homeValue');
+const taxRateInput = document.getElementById('taxRate');
+const propTaxDirect = document.getElementById('propertyTax');
+const propTaxEstimate = document.getElementById('propTaxEstimate');
+
+function updatePropTaxEstimate() {
+  const hv = parseFloat(homeValueInput.value) || 0;
+  const rate = parseFloat(taxRateInput.value) || 0;
+  if (hv > 0 && rate > 0) {
+    const est = hv * rate / 100;
+    propTaxEstimate.textContent = `Estimated annual property tax: $${est.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}`;
+  } else {
+    propTaxEstimate.textContent = '';
+  }
+}
+homeValueInput.addEventListener('input', updatePropTaxEstimate);
+taxRateInput.addEventListener('input', updatePropTaxEstimate);
+
+function getPropertyTax() {
+  const direct = parseFloat(propTaxDirect.value);
+  if (direct > 0) return direct;
+  const hv = parseFloat(homeValueInput.value) || 0;
+  const rate = parseFloat(taxRateInput.value) || 0;
+  if (hv > 0 && rate > 0) return hv * rate / 100;
+  return 0;
+}
+
+function escapeHtml(s) {
+  const el = document.createElement('div');
+  el.textContent = s;
+  return el.innerHTML;
+}
+
+// Drag and drop
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('active'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('active'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('active');
+  if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) uploadFiles(fileInput.files);
+});
+
+function showStatus(msg, type) {
+  status.textContent = msg;
+  status.className = 'status ' + type;
+}
+
+function clearStatus() {
+  status.className = 'status';
+  status.textContent = '';
+}
+
+async function uploadFiles(files) {
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  fd.append('tax_year', document.getElementById('taxYear').value);
+
+  showStatus(`Scanning ${files.length} file(s)...`, 'info');
+  formsSection.classList.add('hidden');
+  document.getElementById('summarySection').classList.add('hidden');
+  reportSection.classList.add('hidden');
+
+  try {
+    const res = await fetch('/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    scannedForms = data.forms;
+    renderCards(scannedForms);
+    formsSection.classList.remove('hidden');
+    clearStatus();
+  } catch (err) {
+    showStatus('Error: ' + err.message, 'error');
+  }
+}
+
+function renderCards(forms) {
+  formCards.innerHTML = '';
+  forms.forEach((form, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    if (form.form_type === 'error') {
+      card.innerHTML = `<h3>${form.source_file} <span class="tag" style="background:#fee2e2;color:#dc2626">Error</span></h3>
+        <p style="font-size:0.85rem;color:#dc2626">${form.data.error}</p>`;
+      formCards.appendChild(card);
+      return;
+    }
+
+    let fieldsHtml = '';
+    const d = form.data;
+
+    if (form.form_type === 'W-2') {
+      fieldsHtml = makeField(i, 'wages', 'Wages (Box 1)', d.wages) +
+        makeField(i, 'federal_tax_withheld', 'Fed Withheld (Box 2)', d.federal_tax_withheld) +
+        makeField(i, 'state_wages', 'State Wages (Box 16)', d.state_wages) +
+        makeField(i, 'state_tax_withheld', 'State Tax (Box 17)', d.state_tax_withheld);
+    } else if (form.form_type === '1099-INT') {
+      fieldsHtml = makeField(i, 'total_interest', 'Total Interest', d.total_interest);
+    } else if (form.form_type === '1098') {
+      fieldsHtml = makeField(i, 'mortgage_interest', 'Mortgage Interest', d.mortgage_interest) +
+        makeField(i, 'property_taxes', 'Property Taxes', d.property_taxes) +
+        makeField(i, 'mortgage_insurance', 'Mortgage Insurance', d.mortgage_insurance);
+    } else if (form.form_type === '1099-B') {
+      const lots = Array.isArray(d) ? d : [];
+      const stGain = lots.filter(t => !t.is_long_term).reduce((s,t) => s + (t.total_gain||0), 0);
+      const ltGain = lots.filter(t => t.is_long_term).reduce((s,t) => s + (t.total_gain||0), 0);
+      fieldsHtml = `<div class="field"><span>Transactions</span><span>${lots.length}</span></div>` +
+        `<div class="field"><span>Short-term gain</span><span>$${stGain.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>` +
+        `<div class="field"><span>Long-term gain</span><span>$${ltGain.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>`;
+    } else {
+      fieldsHtml = `<div class="field"><span>Type</span><span>${form.form_type}</span></div>`;
+    }
+
+    const rawId = 'raw_' + i;
+    const rawToggle = form.raw_text
+      ? `<button class="raw-toggle" onclick="document.getElementById('${rawId}').classList.toggle('hidden')">Show raw text</button>
+         <div id="${rawId}" class="raw-text hidden">${escapeHtml(form.raw_text)}</div>`
+      : '';
+
+    card.innerHTML = `<h3>${form.source_file} <span class="tag">${form.form_type}</span></h3>
+      <div class="fields">${fieldsHtml}</div>${rawToggle}`;
+    formCards.appendChild(card);
+  });
+}
+
+function makeField(formIdx, key, label, value) {
+  const v = value || 0;
+  return `<div class="field">
+    <span>${label}</span>
+    <input type="number" step="0.01" data-form="${formIdx}" data-key="${key}" value="${v}">
+  </div>`;
+}
+
+function collectCorrectedForms() {
+  // Start from scannedForms and apply any edits from input fields
+  const forms = JSON.parse(JSON.stringify(scannedForms));
+  document.querySelectorAll('#formCards input[data-form]').forEach(input => {
+    const fi = parseInt(input.dataset.form);
+    const key = input.dataset.key;
+    forms[fi].data[key] = parseFloat(input.value) || 0;
+  });
+  return forms;
+}
+
+async function calculate() {
+  const forms = collectCorrectedForms();
+  const payload = {
+    forms: forms,
+    filing_status: document.getElementById('filingStatus').value,
+    tax_year: parseInt(document.getElementById('taxYear').value),
+    estimated_payments: parseFloat(document.getElementById('estimatedPayments').value) || 0,
+    property_tax: getPropertyTax(),
+    mortgage_interest: parseFloat(document.getElementById('mortgageInterest').value) || 0,
+    rental_pct: (parseFloat(document.getElementById('rentalPct').value) || 0) / 100,
+  };
+
+  calcBtn.disabled = true;
+  showStatus('Calculating...', 'info');
+
+  try {
+    const res = await fetch('/calculate', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Calculation failed');
+
+    // Populate summary
+    const f = data.federal;
+    const fmt = v => '$' + Math.abs(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    if (f.refund > 0) {
+      document.getElementById('fedResult').textContent = fmt(f.refund) + ' refund';
+      document.getElementById('fedResult').className = 'big-number refund';
+    } else {
+      document.getElementById('fedResult').textContent = fmt(f.net_due) + ' owed';
+      document.getElementById('fedResult').className = 'big-number due';
+    }
+    document.getElementById('fedAgi').textContent = fmt(f.agi);
+    document.getElementById('fedDeduction').textContent = '(' + fmt(f.deduction_amount) + ') ' + f.deduction_type;
+    document.getElementById('fedTaxable').textContent = fmt(f.taxable_income);
+    document.getElementById('fedTax').textContent = fmt(f.total_tax);
+    document.getElementById('fedWithheld').textContent = fmt(f.withheld);
+    document.getElementById('fedRate').textContent = f.effective_rate.toFixed(1) + '%';
+
+    const ca = data.california;
+    if (ca && ca.total_tax !== undefined) {
+      if (ca.refund > 0) {
+        document.getElementById('caResult').textContent = fmt(ca.refund) + ' refund';
+        document.getElementById('caResult').className = 'big-number refund';
+      } else {
+        document.getElementById('caResult').textContent = fmt(ca.net_due) + ' owed';
+        document.getElementById('caResult').className = 'big-number due';
+      }
+      document.getElementById('caIncome').textContent = fmt(ca.total_income);
+      document.getElementById('caTaxable').textContent = fmt(ca.taxable_income);
+      document.getElementById('caTax').textContent = fmt(ca.total_tax);
+      document.getElementById('caWithheld').textContent = fmt(ca.withheld);
+      document.getElementById('caRate').textContent = ca.effective_rate.toFixed(1) + '%';
+    } else {
+      document.getElementById('caResult').textContent = 'N/A';
+      document.getElementById('caResult').className = 'big-number';
+      ['caIncome','caTaxable','caTax','caWithheld','caRate'].forEach(
+        id => document.getElementById(id).textContent = '-');
+    }
+
+    document.getElementById('summarySection').classList.remove('hidden');
+    reportOutput.textContent = data.report;
+    reportSection.classList.remove('hidden');
+    document.getElementById('summarySection').scrollIntoView({ behavior: 'smooth' });
+    clearStatus();
+  } catch (err) {
+    showStatus('Error: ' + err.message, 'error');
+  } finally {
+    calcBtn.disabled = false;
+  }
+}
+</script>
+
+</body>
+</html>
