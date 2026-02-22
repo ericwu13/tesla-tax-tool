@@ -19,7 +19,6 @@ a = Analysis(
     binaries=[],
     datas=[
         ('templates', 'templates'),
-        ('data', 'data'),
     ] + _form_parser_files,
     hiddenimports=[
         # --- app modules ---
