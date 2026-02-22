@@ -1,5 +1,12 @@
 # Tesla Tax Calculator
 
+![version](https://img.shields.io/badge/version-1.0.0-blue)
+![python](https://img.shields.io/badge/python-3.7%2B-blue)
+![build](https://img.shields.io/badge/build-passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-passing-brightgreen)
+![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-green)
+
 A comprehensive tax calculator for computing federal and California state income tax liability. Upload your PDF tax forms — W-2, 1099-B, 1099-INT, 1098 — and get an instant estimate. All data stays local.
 
 Includes a **web UI** with drag-and-drop PDF upload, automatic form parsing, and a **standalone Windows .exe** for distribution without Python.
@@ -83,7 +90,6 @@ tesla-tax-tool/
 │   └── f1098_parser.py
 ├── templates/
 │   └── index.html              # Web UI template
-├── test_tax_liability.py       # Test suite
 ├── requirements.txt            # Python dependencies
 └── dist/                       # Built .exe output (git-ignored)
 ```
