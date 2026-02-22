@@ -8,3 +8,4 @@ yfinance        # stock price fetching
 requests
 beautifulsoup4
 flask
+openpyxl         # E*TRADE vesting XLSX parsing

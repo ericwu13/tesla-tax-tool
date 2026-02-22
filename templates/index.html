@@ -16,6 +16,7 @@
     --green: #059669;
     --red: #dc2626;
     --radius: 8px;
+    --orange: #d97706;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -29,6 +30,32 @@
   }
   h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
   h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--muted); font-weight: 500; }
+
+  /* Mode toggle */
+  .mode-toggle {
+    display: flex;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .mode-toggle button {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    border: none;
+    background: transparent;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--muted);
+    transition: all 0.2s;
+    border-radius: 0;
+  }
+  .mode-toggle button.active {
+    background: var(--accent);
+    color: #fff;
+  }
 
   /* Settings bar */
   .settings {
@@ -139,6 +166,22 @@
     background: var(--border);
     cursor: not-allowed;
   }
+  .btn-secondary {
+    background: #e5e7eb;
+    color: var(--text);
+    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+  }
+  .btn-secondary:hover { background: #d1d5db; }
+  .btn-danger {
+    background: #fee2e2;
+    color: var(--red);
+    font-size: 0.8rem;
+    padding: 0.3rem 0.6rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
 
   /* Summary cards */
   .summary-grid {
@@ -175,6 +218,44 @@
     color: var(--muted);
   }
   .summary-row span:last-child { color: var(--text); font-weight: 500; }
+
+  /* Projection banner */
+  .projection-banner {
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    color: #92400e;
+  }
+  .projection-banner strong { color: var(--orange); }
+
+  /* Assumptions card */
+  .assumptions-card {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .assumptions-card h3 {
+    font-size: 0.85rem;
+    color: var(--orange);
+    margin-bottom: 0.5rem;
+  }
+  .assumptions-card .fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem 1.5rem;
+  }
+  .assumptions-card .field {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+  }
+  .assumptions-card .field span:first-child { color: #92400e; }
+  .assumptions-card .field span:last-child { font-weight: 500; }
 
   /* Report */
   .report {
@@ -243,11 +324,70 @@
     margin-right: 0.5rem;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Mid-year specific */
+  .midyear-section .card { border-left: 3px solid var(--orange); }
+  .vest-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+  }
+  .vest-table th {
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.75rem;
+  }
+  .vest-table td {
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .vest-table tr.future { background: #fffbeb; }
+  .vest-table tr.past { color: var(--muted); }
+  .vest-table .badge {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+  .vest-table .badge.future { background: #fef3c7; color: #92400e; }
+  .vest-table .badge.past { background: #e5e7eb; color: var(--muted); }
+
+  .sale-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .sale-row input[type="number"] {
+    width: 110px;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  .sale-row label {
+    font-size: 0.8rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
 </style>
 </head>
 <body>
 
 <h1>Tax Calculator</h1>
+
+<!-- Mode Toggle -->
+<div class="mode-toggle">
+  <button id="modeYearEnd" class="active" onclick="switchMode('yearend')">Year-End Filing</button>
+  <button id="modeMidYear" onclick="switchMode('midyear')">Mid-Year Estimate</button>
+</div>
 
 <div class="settings">
   <label>
@@ -261,7 +401,7 @@
   </label>
   <label>
     Tax Year
-    <input type="number" id="taxYear" value="2025" min="2020" max="2030">
+    <input type="number" id="taxYear" value="2026" min="2020" max="2030">
   </label>
   <label>
     Estimated Payments
@@ -269,46 +409,159 @@
   </label>
 </div>
 
-<div class="card" style="margin-bottom:1.5rem">
-  <h3>Deductions <span class="tag">Manual Entry</span></h3>
-  <div class="fields">
-    <div class="field">
-      <span>Annual Mortgage Interest ($)</span>
-      <input type="number" id="mortgageInterest" value="" min="0" step="100" placeholder="from 1098 Box 1">
+<!-- ===== YEAR-END MODE ===== -->
+<div id="yearEndPanel">
+  <div class="card" style="margin-bottom:1.5rem">
+    <h3>Deductions <span class="tag">Manual Entry</span></h3>
+    <div class="fields">
+      <div class="field">
+        <span>Annual Mortgage Interest ($)</span>
+        <input type="number" id="mortgageInterest" value="" min="0" step="100" placeholder="from 1098 Box 1">
+      </div>
+      <div class="field">
+        <span>Annual Property Tax ($)</span>
+        <input type="number" id="propertyTax" value="" min="0" step="100" placeholder="e.g. 12000">
+      </div>
+      <div class="field" style="align-items:center;color:var(--muted);font-size:0.8rem">— or estimate property tax from home value —</div>
+      <div class="field">
+        <span>Home Value ($)</span>
+        <input type="number" id="homeValue" value="" min="0" step="10000" placeholder="e.g. 1500000">
+      </div>
+      <div class="field">
+        <span>Tax Rate (%)</span>
+        <input type="number" id="taxRate" value="1.2" min="0" max="5" step="0.01">
+      </div>
+      <div class="field">
+        <span>Rental Use (%)</span>
+        <input type="number" id="rentalPct" value="0" min="0" max="100" step="1" placeholder="0 if none">
+      </div>
     </div>
-    <div class="field">
-      <span>Annual Property Tax ($)</span>
-      <input type="number" id="propertyTax" value="" min="0" step="100" placeholder="e.g. 12000">
+    <p id="propTaxEstimate" style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem"></p>
+  </div>
+
+  <div class="dropzone" id="dropzone">
+    <p>Drop PDF tax forms here or click to browse</p>
+    <p class="hint">Supports W-2, 1099-B, 1099-INT, 1098</p>
+    <input type="file" id="fileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp">
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div id="formsSection" class="hidden">
+    <h2>Extracted Data — review and edit values</h2>
+    <div id="formCards"></div>
+    <button class="btn-primary" id="calcBtn" onclick="calculate()">Calculate Taxes</button>
+  </div>
+</div>
+
+<!-- ===== MID-YEAR MODE ===== -->
+<div id="midYearPanel" class="hidden midyear-section">
+
+  <!-- Paystub Section -->
+  <div class="card">
+    <h3>Paystub Data <span class="tag" style="background:#fef3c7;color:#92400e">YTD</span></h3>
+    <div class="dropzone" id="paystubDropzone" style="padding:1rem;margin-bottom:0.75rem">
+      <p style="margin:0;font-size:0.85rem">Drop paystub PDF here or click to browse</p>
+      <p class="hint">Workday / Tesla paystub — auto-extracts YTD totals</p>
+      <input type="file" id="paystubFileInput" accept=".pdf">
     </div>
-    <div class="field" style="align-items:center;color:var(--muted);font-size:0.8rem">— or estimate property tax from home value —</div>
-    <div class="field">
-      <span>Home Value ($)</span>
-      <input type="number" id="homeValue" value="" min="0" step="10000" placeholder="e.g. 1500000">
+    <div id="paystubParsed" class="hidden" style="font-size:0.8rem;color:var(--green);margin-bottom:0.75rem"></div>
+    <div class="fields">
+      <div class="field">
+        <span>YTD Gross Wages ($)</span>
+        <input type="number" id="ytdGrossWages" value="" min="0" step="100" placeholder="Total from paystub">
+      </div>
+      <div class="field">
+        <span>YTD RSU Income ($)</span>
+        <input type="number" id="ytdRsuIncome" value="" min="0" step="100" placeholder="RSU portion of wages">
+      </div>
+      <div class="field">
+        <span>YTD Federal Withheld ($)</span>
+        <input type="number" id="ytdFedWithheld" value="" min="0" step="100" placeholder="Fed tax withheld">
+      </div>
+      <div class="field">
+        <span>YTD State Withheld ($)</span>
+        <input type="number" id="ytdStateWithheld" value="" min="0" step="100" placeholder="CA tax withheld">
+      </div>
+      <div class="field" style="grid-column: 1 / -1">
+        <span>Pay Date</span>
+        <input type="date" id="payDate" value="" style="width:160px">
+      </div>
     </div>
-    <div class="field">
-      <span>Tax Rate (%)</span>
-      <input type="number" id="taxRate" value="1.2" min="0" max="5" step="0.01">
-    </div>
-    <div class="field">
-      <span>Rental Use (%)</span>
-      <input type="number" id="rentalPct" value="0" min="0" max="100" step="1" placeholder="0 if none">
+    <!-- Live projected annual preview -->
+    <div id="projectedPreview" class="hidden" style="margin-top:0.75rem;padding:0.75rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:0.8rem">
+      <div style="font-weight:600;color:var(--green);margin-bottom:0.4rem">Projected Full-Year Estimate</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.25rem 1.5rem">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Year progress</span><span id="prevYearPct" style="font-weight:500"></span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Annual base salary</span><span id="prevBaseSalary" style="font-weight:500"></span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Future RSU income</span><span id="prevRsuIncome" style="font-weight:500"></span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Projected W-2 wages</span><span id="prevW2Wages" style="font-weight:600;color:var(--text)"></span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Projected fed withheld</span><span id="prevFedWH" style="font-weight:500"></span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Projected state withheld</span><span id="prevStateWH" style="font-weight:500"></span></div>
+      </div>
     </div>
   </div>
-  <p id="propTaxEstimate" style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem"></p>
+
+  <!-- Vesting Schedule Section -->
+  <div class="card">
+    <h3>Vesting Schedule <span class="tag" style="background:#fef3c7;color:#92400e">RSU / ESPP</span></h3>
+    <div style="display:flex;gap:0.75rem;align-items:center;margin-bottom:0.75rem">
+      <div class="dropzone" id="vestDropzone" style="padding:1rem;margin:0;flex:1">
+        <p style="margin:0;font-size:0.85rem">Drop E*TRADE XLSX or click to browse</p>
+        <input type="file" id="vestFileInput" accept=".xlsx,.xls">
+      </div>
+      <span style="color:var(--muted);font-size:0.8rem">or add manually below</span>
+    </div>
+    <div style="display:flex;gap:0.75rem;align-items:flex-end;margin-bottom:0.75rem;flex-wrap:wrap">
+      <label style="font-size:0.8rem;color:var(--muted)">
+        Estimated Stock Price ($)
+        <input type="number" id="estimatedStockPrice" value="" min="0" step="1" placeholder="e.g. 400" style="width:110px;padding:0.3rem 0.4rem;border:1px solid var(--border);border-radius:4px;font-size:0.85rem">
+      </label>
+      <button class="btn-secondary" onclick="addManualVest()">+ Add Vest Event</button>
+    </div>
+    <div id="vestTableContainer"></div>
+  </div>
+
+  <!-- Planned Sales Section -->
+  <div class="card">
+    <h3>Planned Stock Sales <span class="tag" style="background:#fef3c7;color:#92400e">Capital Gains</span></h3>
+    <div id="plannedSalesContainer"></div>
+    <button class="btn-secondary" onclick="addPlannedSale()" style="margin-top:0.5rem">+ Add Sale</button>
+  </div>
+
+  <!-- Other Estimates -->
+  <div class="card">
+    <h3>Other Estimates <span class="tag" style="background:#fef3c7;color:#92400e">Annual</span></h3>
+    <div class="fields">
+      <div class="field">
+        <span>Interest Income ($)</span>
+        <input type="number" id="midEstInterest" value="" min="0" step="10" placeholder="e.g. 500">
+      </div>
+      <div class="field">
+        <span>Mortgage Interest ($)</span>
+        <input type="number" id="midMortgageInterest" value="" min="0" step="100" placeholder="Annual total">
+      </div>
+      <div class="field">
+        <span>Property Taxes ($)</span>
+        <input type="number" id="midPropertyTax" value="" min="0" step="100" placeholder="Annual total">
+      </div>
+      <div class="field">
+        <span>Rental Use (%)</span>
+        <input type="number" id="midRentalPct" value="0" min="0" max="100" step="1" placeholder="0 if none">
+      </div>
+    </div>
+  </div>
+
+  <div class="status" id="midStatus"></div>
+
+  <button class="btn-primary" id="midCalcBtn" onclick="calculateMidYear()" style="margin-top:0.5rem">Project Full-Year Taxes</button>
 </div>
 
-<div class="dropzone" id="dropzone">
-  <p>Drop PDF tax forms here or click to browse</p>
-  <p class="hint">Supports W-2, 1099-B, 1099-INT, 1098</p>
-  <input type="file" id="fileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp">
-</div>
+<!-- ===== RESULTS (shared) ===== -->
+<div id="projectionBanner" class="projection-banner hidden"></div>
 
-<div class="status" id="status"></div>
-
-<div id="formsSection" class="hidden">
-  <h2>Extracted Data — review and edit values</h2>
-  <div id="formCards"></div>
-  <button class="btn-primary" id="calcBtn" onclick="calculate()">Calculate Taxes</button>
+<div id="assumptionsSection" class="hidden">
+  <div class="assumptions-card" id="assumptionsCard"></div>
 </div>
 
 <div id="summarySection" class="hidden">
@@ -342,6 +595,23 @@
 </div>
 
 <script>
+// ===== Mode management =====
+let currentMode = 'yearend';
+
+function switchMode(mode) {
+  currentMode = mode;
+  document.getElementById('modeYearEnd').classList.toggle('active', mode === 'yearend');
+  document.getElementById('modeMidYear').classList.toggle('active', mode === 'midyear');
+  document.getElementById('yearEndPanel').classList.toggle('hidden', mode !== 'yearend');
+  document.getElementById('midYearPanel').classList.toggle('hidden', mode !== 'midyear');
+  // Hide results when switching modes
+  document.getElementById('summarySection').classList.add('hidden');
+  document.getElementById('reportSection').classList.add('hidden');
+  document.getElementById('projectionBanner').classList.add('hidden');
+  document.getElementById('assumptionsSection').classList.add('hidden');
+}
+
+// ===== Year-End Mode (existing logic) =====
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const status = document.getElementById('status');
@@ -399,14 +669,16 @@ fileInput.addEventListener('change', () => {
   if (fileInput.files.length) uploadFiles(fileInput.files);
 });
 
-function showStatus(msg, type) {
-  status.textContent = msg;
-  status.className = 'status ' + type;
+function showStatus(msg, type, elId) {
+  const el = document.getElementById(elId || 'status');
+  el.textContent = msg;
+  el.className = 'status ' + type;
 }
 
-function clearStatus() {
-  status.className = 'status';
-  status.textContent = '';
+function clearStatus(elId) {
+  const el = document.getElementById(elId || 'status');
+  el.className = 'status';
+  el.textContent = '';
 }
 
 async function uploadFiles(files) {
@@ -418,6 +690,8 @@ async function uploadFiles(files) {
   formsSection.classList.add('hidden');
   document.getElementById('summarySection').classList.add('hidden');
   reportSection.classList.add('hidden');
+  document.getElementById('projectionBanner').classList.add('hidden');
+  document.getElementById('assumptionsSection').classList.add('hidden');
 
   try {
     const res = await fetch('/upload', { method: 'POST', body: fd });
@@ -492,7 +766,6 @@ function makeField(formIdx, key, label, value) {
 }
 
 function collectCorrectedForms() {
-  // Start from scannedForms and apply any edits from input fields
   const forms = JSON.parse(JSON.stringify(scannedForms));
   document.querySelectorAll('#formCards input[data-form]').forEach(input => {
     const fi = parseInt(input.dataset.form);
@@ -525,55 +798,437 @@ async function calculate() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Calculation failed');
 
-    // Populate summary
-    const f = data.federal;
-    const fmt = v => '$' + Math.abs(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-
-    if (f.refund > 0) {
-      document.getElementById('fedResult').textContent = fmt(f.refund) + ' refund';
-      document.getElementById('fedResult').className = 'big-number refund';
-    } else {
-      document.getElementById('fedResult').textContent = fmt(f.net_due) + ' owed';
-      document.getElementById('fedResult').className = 'big-number due';
-    }
-    document.getElementById('fedAgi').textContent = fmt(f.agi);
-    document.getElementById('fedDeduction').textContent = '(' + fmt(f.deduction_amount) + ') ' + f.deduction_type;
-    document.getElementById('fedTaxable').textContent = fmt(f.taxable_income);
-    document.getElementById('fedTax').textContent = fmt(f.total_tax);
-    document.getElementById('fedWithheld').textContent = fmt(f.withheld);
-    document.getElementById('fedRate').textContent = f.effective_rate.toFixed(1) + '%';
-
-    const ca = data.california;
-    if (ca && ca.total_tax !== undefined) {
-      if (ca.refund > 0) {
-        document.getElementById('caResult').textContent = fmt(ca.refund) + ' refund';
-        document.getElementById('caResult').className = 'big-number refund';
-      } else {
-        document.getElementById('caResult').textContent = fmt(ca.net_due) + ' owed';
-        document.getElementById('caResult').className = 'big-number due';
-      }
-      document.getElementById('caIncome').textContent = fmt(ca.total_income);
-      document.getElementById('caTaxable').textContent = fmt(ca.taxable_income);
-      document.getElementById('caTax').textContent = fmt(ca.total_tax);
-      document.getElementById('caWithheld').textContent = fmt(ca.withheld);
-      document.getElementById('caRate').textContent = ca.effective_rate.toFixed(1) + '%';
-    } else {
-      document.getElementById('caResult').textContent = 'N/A';
-      document.getElementById('caResult').className = 'big-number';
-      ['caIncome','caTaxable','caTax','caWithheld','caRate'].forEach(
-        id => document.getElementById(id).textContent = '-');
-    }
-
-    document.getElementById('summarySection').classList.remove('hidden');
-    reportOutput.textContent = data.report;
-    reportSection.classList.remove('hidden');
-    document.getElementById('summarySection').scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('projectionBanner').classList.add('hidden');
+    document.getElementById('assumptionsSection').classList.add('hidden');
+    displayResults(data);
     clearStatus();
   } catch (err) {
     showStatus('Error: ' + err.message, 'error');
   } finally {
     calcBtn.disabled = false;
   }
+}
+
+// ===== Shared results display =====
+const fmt = v => '$' + Math.abs(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+function displayResults(data) {
+  const f = data.federal;
+
+  if (f.refund > 0) {
+    document.getElementById('fedResult').textContent = fmt(f.refund) + ' refund';
+    document.getElementById('fedResult').className = 'big-number refund';
+  } else {
+    document.getElementById('fedResult').textContent = fmt(f.net_due) + ' owed';
+    document.getElementById('fedResult').className = 'big-number due';
+  }
+  document.getElementById('fedAgi').textContent = fmt(f.agi);
+  document.getElementById('fedDeduction').textContent = '(' + fmt(f.deduction_amount) + ') ' + f.deduction_type;
+  document.getElementById('fedTaxable').textContent = fmt(f.taxable_income);
+  document.getElementById('fedTax').textContent = fmt(f.total_tax);
+  document.getElementById('fedWithheld').textContent = fmt(f.withheld);
+  document.getElementById('fedRate').textContent = f.effective_rate.toFixed(1) + '%';
+
+  const ca = data.california;
+  if (ca && ca.total_tax !== undefined) {
+    if (ca.refund > 0) {
+      document.getElementById('caResult').textContent = fmt(ca.refund) + ' refund';
+      document.getElementById('caResult').className = 'big-number refund';
+    } else {
+      document.getElementById('caResult').textContent = fmt(ca.net_due) + ' owed';
+      document.getElementById('caResult').className = 'big-number due';
+    }
+    document.getElementById('caIncome').textContent = fmt(ca.total_income);
+    document.getElementById('caTaxable').textContent = fmt(ca.taxable_income);
+    document.getElementById('caTax').textContent = fmt(ca.total_tax);
+    document.getElementById('caWithheld').textContent = fmt(ca.withheld);
+    document.getElementById('caRate').textContent = ca.effective_rate.toFixed(1) + '%';
+  } else {
+    document.getElementById('caResult').textContent = 'N/A';
+    document.getElementById('caResult').className = 'big-number';
+    ['caIncome','caTaxable','caTax','caWithheld','caRate'].forEach(
+      id => document.getElementById(id).textContent = '-');
+  }
+
+  document.getElementById('summarySection').classList.remove('hidden');
+  reportOutput.textContent = data.report;
+  reportSection.classList.remove('hidden');
+  document.getElementById('summarySection').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ===== Mid-Year Mode =====
+let vestingEvents = [];
+let plannedSales = [];
+
+// Paystub PDF upload
+const paystubDropzone = document.getElementById('paystubDropzone');
+const paystubFileInput = document.getElementById('paystubFileInput');
+
+paystubDropzone.addEventListener('dragover', e => { e.preventDefault(); paystubDropzone.classList.add('active'); });
+paystubDropzone.addEventListener('dragleave', () => paystubDropzone.classList.remove('active'));
+paystubDropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  paystubDropzone.classList.remove('active');
+  if (e.dataTransfer.files.length) uploadPaystubFile(e.dataTransfer.files[0]);
+});
+paystubFileInput.addEventListener('change', () => {
+  if (paystubFileInput.files.length) uploadPaystubFile(paystubFileInput.files[0]);
+});
+
+async function uploadPaystubFile(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  showStatus('Parsing paystub...', 'info', 'midStatus');
+
+  try {
+    const res = await fetch('/upload_paystub', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    const p = data.paystub;
+    // Auto-populate the fields
+    document.getElementById('ytdGrossWages').value = p.ytd_gross_wages || '';
+    document.getElementById('ytdRsuIncome').value = p.ytd_rsu_income || '';
+    document.getElementById('ytdFedWithheld').value = p.ytd_fed_withheld || '';
+    document.getElementById('ytdStateWithheld').value = p.ytd_state_withheld || '';
+    if (p.pay_date) {
+      document.getElementById('payDate').value = p.pay_date;
+      // Auto-set tax year from paystub pay date
+      const payYear = parseInt(p.pay_date.split('-')[0]);
+      if (payYear >= 2020 && payYear <= 2030) {
+        document.getElementById('taxYear').value = payYear;
+      }
+    }
+
+    // Show confirmation
+    const parsed = document.getElementById('paystubParsed');
+    parsed.innerHTML = `Parsed <strong>${p.employer || 'paystub'}</strong> — ` +
+      `Pay date: ${p.pay_date}, YTD Gross: $${p.ytd_gross_wages.toLocaleString()}, ` +
+      `Fed withheld: $${p.ytd_fed_withheld.toLocaleString()}, ` +
+      `State withheld: $${p.ytd_state_withheld.toLocaleString()}` +
+      (p.ytd_rsu_income > 0 ? `, RSU: $${p.ytd_rsu_income.toLocaleString()}` : '') +
+      ` — values auto-filled below (edit if needed)`;
+    parsed.classList.remove('hidden');
+
+    // Auto-fetch stock price if not set yet
+    const stockInput = document.getElementById('estimatedStockPrice');
+    if (!stockInput.value || parseFloat(stockInput.value) === 0) {
+      fetchStockPrice();
+    }
+
+    updateProjectedPreview();
+    clearStatus('midStatus');
+  } catch (err) {
+    showStatus('Error parsing paystub: ' + err.message, 'error', 'midStatus');
+  }
+}
+
+// Auto-fetch TSLA stock price
+async function fetchStockPrice() {
+  try {
+    const res = await fetch('/stock_price/TSLA');
+    const data = await res.json();
+    if (data.price > 0) {
+      document.getElementById('estimatedStockPrice').value = data.price;
+      updateProjectedPreview();
+    }
+  } catch (e) { /* silently fail, user can enter manually */ }
+}
+
+// Live projected preview — runs client-side so user sees instant feedback
+function updateProjectedPreview() {
+  const payDate = document.getElementById('payDate').value;
+  const ytdGross = parseFloat(document.getElementById('ytdGrossWages').value) || 0;
+  const ytdRsu = parseFloat(document.getElementById('ytdRsuIncome').value) || 0;
+  const ytdFed = parseFloat(document.getElementById('ytdFedWithheld').value) || 0;
+  const ytdState = parseFloat(document.getElementById('ytdStateWithheld').value) || 0;
+  const stockPrice = parseFloat(document.getElementById('estimatedStockPrice').value) || 0;
+  const taxYear = parseInt(document.getElementById('taxYear').value) || 2025;
+
+  const preview = document.getElementById('projectedPreview');
+  if (!payDate || ytdGross <= 0) {
+    preview.classList.add('hidden');
+    return;
+  }
+
+  // Calculate year fraction
+  const pd = new Date(payDate + 'T00:00:00');
+  const yearStart = new Date(taxYear, 0, 1);
+  const yearEnd = new Date(taxYear, 11, 31);
+  const totalDays = (yearEnd - yearStart) / 86400000 + 1;
+  const elapsed = Math.max(1, Math.min((pd - yearStart) / 86400000 + 1, totalDays));
+  const frac = elapsed / totalDays;
+
+  // Project base salary
+  const ytdBase = ytdGross - ytdRsu;
+  const projectedBase = ytdBase / frac;
+
+  // Future RSU income from vesting events (only in tax year)
+  let futureRsuIncome = 0;
+  const tyStr = String(taxYear);
+  for (const ev of vestingEvents) {
+    if (ev.is_future && (ev.date || '').startsWith(tyStr)
+        && ['rest. stock', 'rsu', 'restricted stock'].includes((ev.plan_type || '').toLowerCase())) {
+      futureRsuIncome += (parseFloat(ev.shares) || 0) * stockPrice;
+    }
+  }
+
+  const projectedW2 = projectedBase + ytdRsu + futureRsuIncome;
+
+  // Withholding projection
+  const estYtdRsuFed = ytdRsu * 0.22;
+  const estYtdBaseFed = ytdFed - estYtdRsuFed;
+  const projFedWH = estYtdBaseFed / frac + estYtdRsuFed + futureRsuIncome * 0.22;
+
+  const estYtdRsuState = ytdRsu * 0.1023;
+  const estYtdBaseState = ytdState - estYtdRsuState;
+  const projStateWH = estYtdBaseState / frac + estYtdRsuState + futureRsuIncome * 0.1023;
+
+  // Update preview
+  document.getElementById('prevYearPct').textContent = (frac * 100).toFixed(1) + '%';
+  document.getElementById('prevBaseSalary').textContent = fmt(projectedBase);
+  document.getElementById('prevRsuIncome').textContent = fmt(futureRsuIncome);
+  document.getElementById('prevW2Wages').textContent = fmt(projectedW2);
+  document.getElementById('prevFedWH').textContent = fmt(projFedWH);
+  document.getElementById('prevStateWH').textContent = fmt(projStateWH);
+  preview.classList.remove('hidden');
+}
+
+// Trigger preview update on any relevant input change
+['ytdGrossWages', 'ytdRsuIncome', 'ytdFedWithheld', 'ytdStateWithheld', 'payDate', 'estimatedStockPrice', 'taxYear'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateProjectedPreview);
+});
+
+// Vesting file upload
+const vestDropzone = document.getElementById('vestDropzone');
+const vestFileInput = document.getElementById('vestFileInput');
+
+vestDropzone.addEventListener('dragover', e => { e.preventDefault(); vestDropzone.classList.add('active'); });
+vestDropzone.addEventListener('dragleave', () => vestDropzone.classList.remove('active'));
+vestDropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  vestDropzone.classList.remove('active');
+  if (e.dataTransfer.files.length) uploadVestingFile(e.dataTransfer.files[0]);
+});
+vestFileInput.addEventListener('change', () => {
+  if (vestFileInput.files.length) uploadVestingFile(vestFileInput.files[0]);
+});
+
+async function uploadVestingFile(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  showStatus('Parsing vesting schedule...', 'info', 'midStatus');
+
+  try {
+    const res = await fetch('/upload_vesting', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    vestingEvents = data.events;
+    renderVestTable();
+    updateProjectedPreview();
+    clearStatus('midStatus');
+  } catch (err) {
+    showStatus('Error: ' + err.message, 'error', 'midStatus');
+  }
+}
+
+function addManualVest() {
+  vestingEvents.push({
+    date: '',
+    shares: 0,
+    plan_type: 'Rest. Stock',
+    is_future: true,
+    grant_reason: '',
+    cost_basis_per_share: 0,
+    price: 0,
+    _manual: true,
+  });
+  renderVestTable();
+}
+
+function removeVest(idx) {
+  vestingEvents.splice(idx, 1);
+  renderVestTable();
+}
+
+function renderVestTable() {
+  const container = document.getElementById('vestTableContainer');
+  if (vestingEvents.length === 0) {
+    container.innerHTML = '<p style="font-size:0.8rem;color:var(--muted)">No vesting events loaded. Upload an XLSX file or add manually.</p>';
+    return;
+  }
+
+  const futureCount = vestingEvents.filter(e => e.is_future).length;
+  const pastCount = vestingEvents.length - futureCount;
+
+  let html = `<p style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem">${vestingEvents.length} events (${futureCount} future, ${pastCount} past)</p>`;
+  html += `<table class="vest-table">
+    <thead><tr>
+      <th>Date</th><th>Shares</th><th>Type</th><th>Reason</th><th>FMV/share</th><th>Status</th><th></th>
+    </tr></thead><tbody>`;
+
+  vestingEvents.forEach((ev, i) => {
+    const cls = ev.is_future ? 'future' : 'past';
+    const badge = ev.is_future
+      ? '<span class="badge future">Future</span>'
+      : '<span class="badge past">Past</span>';
+
+    if (ev._manual && ev.is_future) {
+      html += `<tr class="${cls}">
+        <td><input type="date" value="${ev.date}" onchange="vestingEvents[${i}].date=this.value" style="width:130px;font-size:0.8rem;padding:0.2rem;border:1px solid var(--border);border-radius:3px"></td>
+        <td><input type="number" value="${ev.shares}" min="0" onchange="vestingEvents[${i}].shares=parseFloat(this.value)||0" style="width:70px;font-size:0.8rem;padding:0.2rem;border:1px solid var(--border);border-radius:3px"></td>
+        <td><select onchange="vestingEvents[${i}].plan_type=this.value" style="font-size:0.8rem;padding:0.2rem;border:1px solid var(--border);border-radius:3px">
+          <option value="Rest. Stock" ${ev.plan_type==='Rest. Stock'?'selected':''}>RSU</option>
+          <option value="ESPP" ${ev.plan_type==='ESPP'?'selected':''}>ESPP</option>
+        </select></td>
+        <td>-</td>
+        <td>-</td>
+        <td>${badge}</td>
+        <td><button class="btn-danger" onclick="removeVest(${i})">x</button></td>
+      </tr>`;
+    } else {
+      const fmv = ev.cost_basis_per_share > 0 ? '$' + ev.cost_basis_per_share.toFixed(2) : '-';
+      html += `<tr class="${cls}">
+        <td>${ev.date}</td>
+        <td>${ev.shares}</td>
+        <td>${ev.plan_type}</td>
+        <td>${ev.grant_reason || '-'}</td>
+        <td>${fmv}</td>
+        <td>${badge}</td>
+        <td><button class="btn-danger" onclick="removeVest(${i})">x</button></td>
+      </tr>`;
+    }
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// Planned sales
+function addPlannedSale() {
+  plannedSales.push({ proceeds: 0, cost_basis: 0, is_long_term: false });
+  renderPlannedSales();
+}
+
+function removeSale(idx) {
+  plannedSales.splice(idx, 1);
+  renderPlannedSales();
+}
+
+function renderPlannedSales() {
+  const container = document.getElementById('plannedSalesContainer');
+  if (plannedSales.length === 0) {
+    container.innerHTML = '<p style="font-size:0.8rem;color:var(--muted)">No planned sales. Click + to add one.</p>';
+    return;
+  }
+
+  let html = '';
+  plannedSales.forEach((sale, i) => {
+    html += `<div class="sale-row">
+      <label>Proceeds <input type="number" value="${sale.proceeds}" min="0" step="100" placeholder="$"
+        onchange="plannedSales[${i}].proceeds=parseFloat(this.value)||0"></label>
+      <label>Cost Basis <input type="number" value="${sale.cost_basis}" min="0" step="100" placeholder="$"
+        onchange="plannedSales[${i}].cost_basis=parseFloat(this.value)||0"></label>
+      <label><input type="checkbox" ${sale.is_long_term ? 'checked' : ''}
+        onchange="plannedSales[${i}].is_long_term=this.checked"> Long-term</label>
+      <button class="btn-danger" onclick="removeSale(${i})">x</button>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+// Initialize empty states
+renderVestTable();
+renderPlannedSales();
+
+async function calculateMidYear() {
+  const midCalcBtn = document.getElementById('midCalcBtn');
+
+  const payload = {
+    filing_status: document.getElementById('filingStatus').value,
+    tax_year: parseInt(document.getElementById('taxYear').value),
+    estimated_payments: parseFloat(document.getElementById('estimatedPayments').value) || 0,
+    paystub: {
+      ytd_gross_wages: parseFloat(document.getElementById('ytdGrossWages').value) || 0,
+      ytd_rsu_income: parseFloat(document.getElementById('ytdRsuIncome').value) || 0,
+      ytd_fed_withheld: parseFloat(document.getElementById('ytdFedWithheld').value) || 0,
+      ytd_state_withheld: parseFloat(document.getElementById('ytdStateWithheld').value) || 0,
+      pay_date: document.getElementById('payDate').value,
+    },
+    vesting_events: vestingEvents,
+    estimated_stock_price: parseFloat(document.getElementById('estimatedStockPrice').value) || 0,
+    planned_sales: plannedSales,
+    estimated_interest: parseFloat(document.getElementById('midEstInterest').value) || 0,
+    mortgage_interest: parseFloat(document.getElementById('midMortgageInterest').value) || 0,
+    property_taxes: parseFloat(document.getElementById('midPropertyTax').value) || 0,
+    rental_pct: (parseFloat(document.getElementById('midRentalPct').value) || 0) / 100,
+  };
+
+  // Validate required fields
+  if (!payload.paystub.pay_date) {
+    showStatus('Please enter a pay date.', 'error', 'midStatus');
+    return;
+  }
+  if (payload.paystub.ytd_gross_wages <= 0) {
+    showStatus('Please enter YTD gross wages.', 'error', 'midStatus');
+    return;
+  }
+
+  midCalcBtn.disabled = true;
+  showStatus('Projecting full-year taxes...', 'info', 'midStatus');
+
+  try {
+    const res = await fetch('/calculate_midyear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Calculation failed');
+
+    // Show projection banner
+    const banner = document.getElementById('projectionBanner');
+    const a = data.assumptions;
+    banner.innerHTML = `<strong>PROJECTION</strong> — Based on data through ${a.pay_date} (${a.year_pct} of year). ` +
+      `Stock price: $${a.estimated_stock_price.toLocaleString()}. ` +
+      `${a.future_vest_count} future RSU vest(s), ${a.planned_sales_count} planned sale(s).`;
+    banner.classList.remove('hidden');
+
+    // Show assumptions
+    displayAssumptions(data.assumptions);
+
+    // Show results
+    displayResults(data);
+    clearStatus('midStatus');
+  } catch (err) {
+    showStatus('Error: ' + err.message, 'error', 'midStatus');
+  } finally {
+    midCalcBtn.disabled = false;
+  }
+}
+
+function displayAssumptions(a) {
+  const card = document.getElementById('assumptionsCard');
+  card.innerHTML = `
+    <h3>Projection Assumptions</h3>
+    <div class="fields">
+      <div class="field"><span>Year Progress</span><span>${a.year_pct}</span></div>
+      <div class="field"><span>Est. Stock Price</span><span>$${a.estimated_stock_price.toLocaleString()}</span></div>
+      <div class="field"><span>YTD Base Salary</span><span>${fmt(a.ytd_base_salary)}</span></div>
+      <div class="field"><span>Projected Base (Full Year)</span><span>${fmt(a.projected_base_salary)}</span></div>
+      <div class="field"><span>YTD RSU Income</span><span>${fmt(a.ytd_rsu_income)}</span></div>
+      <div class="field"><span>Future RSU Income</span><span>${fmt(a.future_rsu_income)}</span></div>
+      <div class="field"><span>Future ESPP Discount</span><span>${fmt(a.future_espp_discount)}</span></div>
+      <div class="field"><span>Total Projected W-2</span><span>${fmt(a.projected_w2_wages)}</span></div>
+      <div class="field"><span>Projected Fed Withheld</span><span>${fmt(a.projected_fed_withheld)}</span></div>
+      <div class="field"><span>Projected State Withheld</span><span>${fmt(a.projected_state_withheld)}</span></div>
+      <div class="field"><span>Planned Capital Gains</span><span>${fmt(a.total_planned_gains)}</span></div>
+      <div class="field"><span>Salary Method</span><span>${a.method_base}</span></div>
+      <div class="field" style="grid-column:1/-1"><span>RSU Method</span><span>${a.method_rsu}</span></div>
+      <div class="field" style="grid-column:1/-1"><span>Withholding Method</span><span>${a.method_withholding}</span></div>
+    </div>`;
+  document.getElementById('assumptionsSection').classList.remove('hidden');
 }
 </script>
 

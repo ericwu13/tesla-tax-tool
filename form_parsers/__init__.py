@@ -4,6 +4,8 @@ from form_parsers.w2_parser import parse_w2
 from form_parsers.f1099b_parser import parse_1099b
 from form_parsers.f1099int_parser import parse_1099int
 from form_parsers.f1098_parser import parse_1098
+from form_parsers.vesting_parser import parse_vesting_xlsx
+from form_parsers.paystub_parser import parse_paystub
 
 PARSERS = {
     'W-2': parse_w2,
