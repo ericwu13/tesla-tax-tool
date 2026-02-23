@@ -1,4 +1,13 @@
-"""1099-B (Proceeds From Broker) parser for extracted PDF text."""
+"""1099-B (Proceeds From Broker) parser for extracted PDF text.
+
+Parses both covered and noncovered securities. For noncovered securities
+(Box B/E) where E*TRADE reports $0 cost basis, the parser:
+  1. Parses individual transaction rows to get dates
+  2. For same-day RSU sales (sold within 2 days of acquisition),
+     estimates cost basis ≈ proceeds (gain ≈ $0) since these are
+     shares sold to cover tax withholding at vest FMV
+  3. For longer-held noncovered, flags for user correction
+"""
 
 import re
 from datetime import datetime
@@ -53,23 +62,217 @@ def parse_1099b(text: str, tax_year: int = None) -> list:
     if tax_year is None:
         tax_year = datetime.now().year
 
-    # Strategy 1: Summary totals (most reliable — broker-calculated totals)
+    # Strategy 1: Box-level subtotals (A/B/D/E) — best for covered vs noncovered
+    results = _parse_box_subtotals(text, tax_year)
+    if results:
+        return results
+
+    # Strategy 2: Summary totals (Total Short/Long - Term)
     results = _parse_summary_totals(text, tax_year)
     if results:
         return results
 
-    # Strategy 2: Individual transaction rows
+    # Strategy 3: Individual transaction rows
     results = _parse_transaction_rows(text, tax_year)
     if results:
         return results
 
-    # Strategy 3: Summary sections with keyword matching
+    # Strategy 4: Summary sections with keyword matching
     results = _parse_summary_sections(text, tax_year)
     if results:
         return results
 
-    # Strategy 4: Transaction blocks (label: value format)
+    # Strategy 5: Transaction blocks (label: value format)
     return _parse_transaction_blocks(text, tax_year)
+
+
+def _parse_box_subtotals(text: str, tax_year: int) -> list:
+    """Parse Box A/B/D/E subtotals from the 1099-B Totals Summary page.
+
+    Box A = short-term covered (basis reported to IRS)
+    Box B = short-term noncovered (basis NOT reported to IRS)
+    Box D = long-term covered (basis reported to IRS)
+    Box E = long-term noncovered (basis NOT reported to IRS)
+
+    Each box line has: PROCEEDS  COST BASIS  MKT DISCOUNT  WASH SALE  GAIN/LOSS
+
+    For noncovered (Box B/E), cost basis is $0 on the 1099-B. We parse
+    individual transaction rows to detect same-day RSU sales where the
+    actual gain is ~$0 (cost basis ≈ proceeds).
+    """
+    results = []
+
+    # Boxes and their properties: (box_letter, is_long_term, is_covered)
+    boxes = [
+        ('A', False, True),   # short-term covered
+        ('B', False, False),  # short-term noncovered
+        ('D', True, True),    # long-term covered
+        ('E', True, False),   # long-term noncovered
+    ]
+
+    found_any = False
+    for box_letter, is_long, is_covered in boxes:
+        # Match "Box A" line with amounts, skip "Box A - Ordinary" lines
+        pattern = re.compile(
+            rf'Box\s*{box_letter}\s*\(basis\s*(?:reported|not\s*reported)[^)]*\)\s*(.*)',
+            re.IGNORECASE | re.MULTILINE,
+        )
+        match = pattern.search(text)
+        if not match:
+            continue
+
+        amounts = _extract_amounts(match.group(1))
+        if len(amounts) < 5:
+            continue
+
+        proceeds = amounts[0]
+        cost_basis = amounts[1]
+        wash_sale = amounts[3]
+        raw_gain = amounts[4]
+
+        if proceeds == 0 and cost_basis == 0:
+            continue
+
+        found_any = True
+        taxable_gain = raw_gain + wash_sale
+
+        # For noncovered securities with $0 cost basis, try to fix using
+        # individual transaction rows
+        if not is_covered and cost_basis == 0 and proceeds > 0:
+            adjusted = _adjust_noncovered_from_transactions(
+                text, is_long, tax_year
+            )
+            if adjusted is not None:
+                cost_basis = adjusted['cost_basis']
+                raw_gain = adjusted['raw_gain']
+                wash_sale = adjusted['wash_sale']
+                taxable_gain = raw_gain + wash_sale
+
+        result = _make_result(
+            datetime(tax_year, 1, 1), datetime(tax_year, 12, 31),
+            proceeds, cost_basis,
+            raw_gain, wash_sale, taxable_gain, is_long,
+        )
+        result['form_8949_box'] = box_letter
+        result['is_covered'] = is_covered
+
+        if not is_covered and cost_basis == 0:
+            result['cost_basis_missing'] = True
+
+        results.append(result)
+
+    return results if found_any else []
+
+
+def _adjust_noncovered_from_transactions(text: str, is_long: bool,
+                                          tax_year: int) -> dict:
+    """Estimate cost basis for noncovered securities from transaction rows.
+
+    For same-day RSU sales (sold within 2 days of acquisition), the cost
+    basis is the FMV at vest ≈ sale price, so gain ≈ $0.
+    For longer-held sales, we can't reliably estimate — return None.
+    """
+    rows = _parse_noncovered_transaction_rows(text, is_long)
+    if not rows:
+        return None
+
+    total_proceeds = 0
+    total_cost = 0
+    total_wash = 0
+    all_same_day = True
+
+    for row in rows:
+        total_proceeds += row['proceeds']
+        total_wash += row['wash_sale']
+
+        days_held = abs((row['date_sold'] - row['date_acquired']).days)
+        if days_held <= 2:
+            # Same-day RSU sale: cost basis ≈ proceeds (gain ≈ $0)
+            total_cost += row['proceeds']
+        else:
+            all_same_day = False
+            # Can't reliably estimate cost basis for longer-held noncovered
+            total_cost += row['cost_basis']
+
+    if total_proceeds <= 0:
+        return None
+
+    raw_gain = total_proceeds - total_cost
+    return {
+        'cost_basis': total_cost,
+        'raw_gain': raw_gain,
+        'wash_sale': total_wash,
+    }
+
+
+def _parse_noncovered_transaction_rows(text: str, is_long: bool) -> list:
+    """Extract individual transaction rows from noncovered security sections.
+
+    Looks specifically in the "Noncovered Securities" sections for
+    Short Term or Long Term. The text may contain multiple sections with
+    the same header (summary page + detail pages), so we try all matches
+    and use the one that has actual transaction rows.
+    """
+    term = 'Long' if is_long else 'Short'
+    section_pattern = re.compile(
+        rf'{term}\s*Term\s*-?\s*Noncovered\s*Securities.*?'
+        rf'(?=(?:Long|Short)\s*Term\s*-?\s*(?:Covered|Noncovered)|'
+        rf'Total\s*{term}\s*Term\s*Covered\s*and|$)',
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    row_pattern = re.compile(
+        r'(\d{1,2}/\d{1,2}/\d{2,4})\s*'
+        r'(\d{1,2}/\d{1,2}/\d{2,4})\s*'
+        r'(.*?)$',
+        re.MULTILINE,
+    )
+
+    # Try all matching sections — the summary page has the same header
+    # as the detail page, but only the detail page has transaction rows
+    for section_match in section_pattern.finditer(text):
+        section_text = section_match.group(0)
+
+        # Detect column order from headers
+        acquired_first = bool(re.search(
+            r'ACQUIRED.*?SOLD', section_text, re.IGNORECASE
+        ))
+
+        rows = []
+        for m in row_pattern.finditer(section_text):
+            date1 = _parse_date(m.group(1))
+            date2 = _parse_date(m.group(2))
+            if date1 is None or date2 is None:
+                continue
+
+            if acquired_first:
+                date_acquired, date_sold = date1, date2
+            else:
+                date_sold, date_acquired = date1, date2
+
+            amounts = _extract_amounts(m.group(3))
+            if len(amounts) < 2:
+                continue
+
+            proceeds = amounts[0]
+            cost_basis = amounts[1] if len(amounts) > 1 else 0
+            wash_sale = 0.0
+
+            if len(amounts) >= 5:
+                wash_sale = amounts[3]
+
+            rows.append({
+                'date_acquired': date_acquired,
+                'date_sold': date_sold,
+                'proceeds': proceeds,
+                'cost_basis': cost_basis,
+                'wash_sale': wash_sale,
+            })
+
+        if rows:
+            return rows
+
+    return []
 
 
 def _parse_summary_totals(text: str, tax_year: int) -> list:
@@ -273,6 +476,8 @@ def _make_result(date_acquired, date_sold, proceeds, cost_basis,
         'capital_gain_portion': taxable_gain,
         'grant_number': 'N/A',
         'form_8949_box': '',
+        'is_covered': True,
+        'cost_basis_missing': False,
         'actually_sold': True,
         'source': '1099-B',
     }

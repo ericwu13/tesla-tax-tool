@@ -738,9 +738,22 @@ function renderCards(forms) {
       const lots = Array.isArray(d) ? d : [];
       const stGain = lots.filter(t => !t.is_long_term).reduce((s,t) => s + (t.total_gain||0), 0);
       const ltGain = lots.filter(t => t.is_long_term).reduce((s,t) => s + (t.total_gain||0), 0);
+      const missingCB = lots.filter(t => t.cost_basis_missing);
       fieldsHtml = `<div class="field"><span>Transactions</span><span>${lots.length}</span></div>` +
         `<div class="field"><span>Short-term gain</span><span>$${stGain.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>` +
         `<div class="field"><span>Long-term gain</span><span>$${ltGain.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>`;
+      if (missingCB.length > 0) {
+        const missingTotal = missingCB.reduce((s,t) => s + (t.total_gain||0), 0);
+        fieldsHtml += `<div class="field" style="color:var(--orange);font-size:0.82rem;margin-top:0.3rem">` +
+          `<span>&#9888; Noncovered securities</span>` +
+          `<span>$${missingTotal.toLocaleString(undefined,{minimumFractionDigits:2})} gain (cost basis not reported — verify)</span></div>`;
+      }
+      const adjusted = lots.filter(t => !t.is_covered && !t.cost_basis_missing && t.cost_basis > 0);
+      if (adjusted.length > 0) {
+        fieldsHtml += `<div class="field" style="color:var(--green);font-size:0.82rem">` +
+          `<span>Same-day RSU sales adjusted</span>` +
+          `<span>Cost basis set to proceeds (gain ~ $0)</span></div>`;
+      }
     } else {
       fieldsHtml = `<div class="field"><span>Type</span><span>${form.form_type}</span></div>`;
     }
