@@ -1,6 +1,6 @@
 # Tesla Tax Calculator
 
-![version](https://img.shields.io/badge/version-2.0.0-blue)
+![version](https://img.shields.io/badge/version-2.1.0-blue)
 ![python](https://img.shields.io/badge/python-3.7%2B-blue)
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 ![tests](https://img.shields.io/badge/tests-passing-brightgreen)
